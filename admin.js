@@ -34,13 +34,13 @@
 
  // Product classification by type/name/tags/description, independent of brand.
  const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
- const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'Wireless Earbuds',airpods_cases:'Earbuds Case',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Charging Cables',car_accessories:'Car Accessories',usb_accessories:'USB-C Hubs / Docking Stations',audio_wired:'Wired Earphones',watch_accessories:'Smart Watches & Accessories',phone_holders_tripods:'Phone Holders & Stands',memory_storage:'Memory Cards & USB Drives',phone_care:'Cleaning & Phone Care',tablet_accessories:'Tablet Accessories & Stylus Pens',lighting:'Lighting & Ring Lights',other:'Other Accessories',needs_review:'Needs Review',audio:'Audio & Sound'};
+ const categoryLabels={phone_cases:'Case',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'Wireless Earbuds',airpods_cases:'Earbuds Case',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Charging Cables',car_accessories:'Car Accessories',usb_accessories:'USB-C Hubs / Docking Stations',audio_wired:'Wired Earphones',watch_accessories:'Smart Watches & Accessories',phone_holders_tripods:'Phone Holders & Stands',memory_storage:'Memory Cards & USB Drives',phone_care:'Cleaning & Phone Care',tablet_accessories:'Tablet Accessories & Stylus Pens',lighting:'Lighting & Ring Lights',other:'Other Accessories',needs_review:'Needs Review',audio:'Audio & Sound'};
  function categoryGroup(name){
    const n=textKey(name);
    if(/needs review|غير مصنف|بحاجه لمراجعه/.test(n))return 'needs_review';
    if(/screen protector|tempered glass|privacy glass|camera lens protector|screen guard|لزقات الحمايه|حمايه الشاشه|لزقات شاشه|حمايه عدسه/.test(n))return 'screen_protectors';
    if(/airpods case|earbuds case|case for airpods|كفرات ايربود|كفر ايربود|كفر سماعات/.test(n))return 'airpods_cases';
-   if(/phone case|phone cover|mobile case|phone covers|iphone case|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات ابل|كفرات سامسونج|^كفرات$|^الكفرات$|^كفر$/.test(n))return 'phone_cases';
+   if(/^case$|phone case|phone cover|mobile case|phone covers|iphone case|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات ابل|كفرات سامسونج|^كفرات$|^الكفرات$|^كفر$/.test(n))return 'phone_cases';
    if(/power bank|powerbank|portable power|باور بانك|باوربانك|بطاريات متنقله/.test(n))return 'power_banks';
    if(/car charger|car mount|car holder|car accessories|automobile|car phone|dashboard mount|phone mounts|هولدر سياره|حامل سياره|حوامل السيارات|اكسسوارات السياره|شاحن سياره|شواحن السيارات|مرسل fm|اف ام/.test(n))return 'car_accessories';
    if(/wireless charger|magnetic charger|magsafe charger|شاحن لاسلكي|شواحن لاسلكيه/.test(n))return 'wireless_chargers';
