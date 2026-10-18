@@ -52,7 +52,7 @@ section[id]{scroll-margin-top:88px}
 /* Product-first category tiles and detail sheet */
 .category-card{display:flex;flex-direction:column;padding:0;text-align:right;overflow:hidden;min-height:190px;background:#f7f6f2;border-radius:18px}
 .category-photo-wrap{display:block;width:100%;height:135px;background:#f2f1ed;overflow:hidden}
-.category-photo{display:block;width:100%;height:100%;object-fit:cover;mix-blend-mode:multiply}
+.category-photo{display:block;width:100%;height:100%;object-fit:contain;mix-blend-mode:multiply;padding:8px}
 .category-card-copy{display:block;padding:12px 14px 13px}
 .category-card-copy strong{display:block;font-size:13px}
 .category-card-copy small{display:block;color:#777;font-size:10px;margin-top:3px}
