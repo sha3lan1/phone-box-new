@@ -5,7 +5,7 @@
   const norm=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
   const fallbackImage='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="100%" height="100%" fill="#f0efec"/><g fill="none" stroke="#b6b4ae" stroke-width="5"><rect x="235" y="100" width="130" height="245" rx="24"/></g><text x="300" y="400" text-anchor="middle" fill="#686761" font-family="Arial" font-size="22">PHONE BOX</text></svg>');
   const imageFor=p=>p?.image_url||(Array.isArray(p?.images)&&p.images[0])||'';
-  const cleanDescription=v=>String(v||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/^Type:\\s.*?\\s·\\s(?=Tags:)/i,'').replace(/^Tags:\\s.*?\\s·\\s/i,'').trim();
+  const cleanDescription=v=>String(v||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/^Type:\s.*?\s·\s(?=Tags:)/i,'').replace(/^Tags:\s.*?\s·\s/i,'').trim();
   const categoryDisplayName=name=>{
     const n=norm(name);
     const rules=[
