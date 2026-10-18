@@ -9,37 +9,29 @@
   const categoryDisplayName=name=>{
     const n=norm(name);
     const rules=[
-      [/screen protector|tempered glass|privacy glass|screen guard|camera lens protector|لزقات الحمايه|حمايه الشاشه/,'Screen Protectors'],
-      [/airpods case|earbuds case|كفرات ايربود|كفر ايربود/,'AirPods Cases'],
-      [/phone case|phone cover|mobile case|كفرات الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات سامسونج|^كفرات$|^كفر$/,'Phone Cases'],
+      [/needs review|غير مصنف|بحاجه لمراجعه/,'Needs Review'],
+      [/screen protector|tempered glass|privacy glass|screen guard|camera lens protector|لزقات الحمايه|حمايه الشاشه|لزقات شاشه|حمايه عدسه/,'Screen Protectors'],
+      [/airpods case|earbuds case|case for airpods|كفرات ايربود|كفر ايربود|كفر سماعات/,'AirPods Cases'],
+      [/phone case|phone cover|mobile case|phone covers|iphone case|كفرات الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات سامسونج|كفر موبايل/,'Phone Cases'],
       [/power bank|powerbank|باور بانك|باوربانك/,'Power Banks'],
-      [/car charger|شاحن سياره|شواحن السيارات/,'Car Chargers'],
-      [/car mount|car holder|dashboard mount|هولدر سياره|حامل سياره|حوامل السيارات/,'Car Mounts'],
+      [/car charger|car mount|car holder|car accessories|automobile|dashboard mount|هولدر سياره|حامل سياره|شاحن سياره|اكسسوارات السياره|مرسل fm/,'Car Accessories'],
       [/wireless charger|magsafe charger|شاحن لاسلكي/,'Wireless Chargers'],
-      [/charger|charging|wall charger|gan charger|شاحن|شواحن/,'Chargers'],
-      [/cable|cables|caple|cabel|wire|كيبل|كابل|كوابل|كابلات|اسلاك/,'Cables'],
-      [/adapter|converter|dongle|usb hub|otg|محول|محولات|ادابتور/,'Adapters & Hubs'],
-      [/headphone|headset|over ear|هيدفون|سماعات الراس/,'Headphones'],
-      [/earbud|airpods|earphone|ايربود|سماعات ابل|سماعات لاسلكيه/,'AirPods & Earbuds'],
-      [/watch|smartwatch|apple watch|ساعات|اكسسوارات الساعات/,'Watch Accessories'],
-      [/selfie stick|tripod|gimbal|عصا سيلفي|ترايبود/,'Selfie Sticks & Tripods'],
-      [/ring light|رينج لايت/,'Ring Lights'],
-      [/stand|holder|ستاند|حوامل الموبايل/,'Phone Stands'],
+      [/charger|charging|wall charger|gan charger|رؤوس الشحن|راس شحن|شاحن|شواحن/,'Chargers'],
+      [/cable|cables|caple|cabel|wire|كيبل|كابل|كوابل|كابلات|كيابل|اسلاك|وصله شحن/,'Cables'],
+      [/adapter|converter|dongle|usb hub|otg|محول|محولات|ادابتور|ملحقات usb|ملحقات يو اس بي/,'USB Adapters & Accessories'],
+      [/wired earphone|wired headset|wired headphones|headphone|headset|over ear|هيدفون|سماعات سلكيه|سماعات سلكية|سماعات الراس/,'Wired Earphones & Headphones'],
+      [/earbud|airpods|wireless earphone|ايربود|سماعات ابل|سماعات لاسلكيه|سماعات بلوتوث/,'AirPods & Earbuds'],
+      [/watch|smartwatch|apple watch|watch band|watch strap|ساعات ذكيه|ساعات|اكسسوارات الساعات/,'Smart Watches & Accessories'],
+      [/selfie stick|tripod|gimbal|phone holder|phone stand|desktop stand|ستاند|حوامل الموبايل|حوامل الهاتف|ترايبود|عصا سيلفي/,'Phone Holders & Tripods'],
+      [/ring light|lighting|رينج لايت|اضاءه/,'Lighting & Ring Lights'],
       [/memory card|flash drive|usb drive|ذاكره|فلاش ميموري/,'Memory Cards & USB Drives'],
-      [/cleaning|cleaner|تنظيف/,'Cleaning Kits'],
-      [/stylus|قلم لمس|قلم ايباد/,'Styluses'],
-      [/tablet|ipad|تابلت|ايباد/,'Tablet Accessories'],
-      [/aux|audio adapter|محول صوت/,'Audio Adapters'],
-      [/screen cleaning|cleaning kit/,'Cleaning Kits'],
-      [/car accessories|اكسسوارات السياره/,'Car Accessories'],
-      [/gaming|gamepad|controller|العاب|يد تحكم/,'Gaming Accessories'],
-      [/microphone|mic|مايكروفون|مايك/,'Microphones'],
-      [/speaker|bluetooth speaker|سبيكر|مكبر صوت/,'Bluetooth Speakers'],
-      [/sim eject|sim pin|دبوس الشريحه/,'SIM Tools']
+      [/cleaning|cleaner|cleaning kit|phone care|phone protection|تنظيف|طقم تنظيف|حمايه الموبايل|حمايه الهاتف/,'Cleaning & Phone Care'],
+      [/stylus|tablet|ipad|macbook accessories|قلم لمس|قلم ايباد|اكسسوارات التابلت|اكسسوارات الايباد/,'Tablet Accessories & Stylus Pens'],
+      [/audio|sound|speaker|microphone|سماعات|صوت|سبيكر|مكبر صوت|مايكروفون/,'Audio & Sound'],
+      [/other accessories|miscellaneous|متنوع|اكسسوارات متنوعه|اخرى|ملحقات اخرى/,'Other Accessories']
     ];
     for(const [re,label] of rules)if(re.test(n))return label;
-    if(!name)return 'Needs Classification';
-    return name;
+    return /[\u0600-\u06FF]/.test(String(name||''))?'Other Accessories':String(name||'Other Accessories');
   };
   const categoryIdForProduct=p=>String(p.category_id||'');
   const categoryName=id=>{const c=state.categories.find(x=>String(x.id)===String(id));return c?categoryDisplayName(c.name):'Needs Classification';};
