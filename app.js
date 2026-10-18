@@ -88,8 +88,31 @@
     const sign = button.querySelector('span');
     if (sign) sign.textContent = open ? '−' : '＋';
   });
+  const chooseCategory = (cat) => {
+    if (!cat) return;
+    state.category = cat.dataset.category;
+    const filter = $('#categoryFilter');
+    if (filter) filter.value = state.category;
+    renderCategories(); renderProducts();
+    if (drawer && drawer.contains(cat)) setDrawer(false);
+    requestAnimationFrame(() => $('#products')?.scrollIntoView({behavior:'smooth',block:'start'}));
+  };
+  $('#categoryGrid')?.addEventListener('click', e => {
+    const cat = e.target.closest('[data-category]');
+    if (cat) { e.preventDefault(); chooseCategory(cat); }
+  });
+  document.querySelectorAll('.desktop-nav a, .hero-actions a[href^="#"], .mobile-quick-nav a[href^="#"]').forEach(link => {
+    link.addEventListener('click', e => {
+      const target = document.querySelector(link.getAttribute('href'));
+      if (target) { e.preventDefault(); target.scrollIntoView({behavior:'smooth',block:'start'}); if (drawer?.contains(link)) setDrawer(false); }
+    });
+  });
+  $('#quickSearch')?.addEventListener('click', () => {
+    $('#products')?.scrollIntoView({behavior:'smooth',block:'start'});
+    setTimeout(() => $('#searchInput')?.focus({preventScroll:true}), 350);
+  });
   document.addEventListener('click', e => {
-    const cat = e.target.closest('[data-category]'); if (cat) { state.category = cat.dataset.category; $('#categoryFilter').value=state.category; renderCategories(); renderProducts(); if (drawer && drawer.contains(cat)) setDrawer(false); $('#products').scrollIntoView({behavior:'smooth'}); }
+    const cat = e.target.closest('[data-category]'); if (cat && !$('#categoryGrid')?.contains(cat)) chooseCategory(cat);
     const add = e.target.closest('[data-add]'); if (add) { const p=state.products.find(x=>String(x.id)===add.dataset.add); if(!p)return; const item=state.cart.find(x=>String(x.id)===String(p.id)); if(item)item.qty++; else state.cart.push({id:p.id,name:p.name,price:Number(p.price)||0,qty:1}); saveCart(); toast('انضاف المنتج للسلة'); }
     const qty = e.target.closest('[data-qty]'); if(qty) { const item=state.cart.find(x=>String(x.id)===qty.dataset.qty); if(item){item.qty+=Number(qty.dataset.delta); if(item.qty<=0)state.cart=state.cart.filter(x=>x!==item);saveCart();} }
     const remove=e.target.closest('[data-remove]'); if(remove){state.cart=state.cart.filter(x=>String(x.id)!==remove.dataset.remove);saveCart();}
