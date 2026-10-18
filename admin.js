@@ -157,15 +157,42 @@
 
  async function ensureCategory(group, categories){
    const name=categoryLabels[group]||'Needs Review';
+   // Always check semantic match, exact unique name, and unique slug before insert.
    let existing=categories.find(c=>categoryGroup(c.name)===group);
-   if(existing)return existing.id;
+   if(!existing){
+     const byName=await db.from('categories').select('*').eq('name',name).maybeSingle();
+     if(byName.error)throw new Error('Could not check category '+name+'.');
+     existing=byName.data||null;
+   }
    const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+   if(!existing){
+     const bySlug=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
+     if(bySlug.error)throw new Error('Could not check category slug for '+name+'.');
+     existing=bySlug.data||null;
+   }
+   if(existing){
+     if(existing.is_active===false){
+       const activated=await db.from('categories').update({is_active:true}).eq('id',existing.id).select('*').single();
+       if(activated.error)throw new Error('Could not activate existing category '+name+'.');
+       existing=activated.data;
+     }
+     if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
+     return existing.id;
+   }
    const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
    const result=await db.from('categories').insert({name,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
    if(result.error){
-     const again=await db.from('categories').select('*').eq('name',name).maybeSingle();
-     if(again.data){categories.push(again.data);return again.data.id;}
-     throw new Error('Could not create category '+name+': '+result.error.message);
+     // Reconcile uniqueness conflicts without asking the user to find products.
+     const [retryName,retrySlug]=await Promise.all([
+       db.from('categories').select('*').eq('name',name).maybeSingle(),
+       db.from('categories').select('*').eq('slug',slug).maybeSingle()
+     ]);
+     existing=retryName.data||retrySlug.data||null;
+     if(existing){
+       if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
+       return existing.id;
+     }
+     throw new Error('Could not match or create category automatically. Please refresh the admin panel and run the bulk operation again.');
    }
    categories.push(result.data);return result.data.id;
  }
