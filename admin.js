@@ -24,72 +24,80 @@
  if(file&&editing?.image_path&&editing.image_path!==image_path)await db.storage.from('product-images').remove([editing.image_path]);resetForm();await loadAll();say('#formMessage','تم حفظ المنتج بنجاح.');
  }catch(err){say('#formMessage','لم يتم الحفظ: '+(err.message||'حدث خطأ'));}finally{button.disabled=false;}});
 
- // Bulk importer: reads the public Shopify product feed and inserts products without displaying prices.
- const joyroomButton=$('#importJoyroom');
- if(joyroomButton) joyroomButton.addEventListener('click', async()=>{
-   if(!confirm('سيتم استيراد المنتجات المتاحة من كتالوج JOYROOM الرسمي مع الصور. سيتم تخزين السعر كصفر ولن يظهر للزبائن. متابعة؟')) return;
-   joyroomButton.disabled=true; say('#importMessage','جارٍ جلب كتالوج JOYROOM…');
-   try {
-     let source=null, failure=null;
-     const urls=['https://www.joyroom.com/products.json?limit=250','https://www.joyroom.com/collections/all/products.json?limit=250'];
+ // Bulk import for official brand product feeds; no arbitrary default category.
+ const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9\\u0600-\\u06FF]+/g,' ').trim();
+ function chooseProductCategory(product, categories) {
+   const title=textKey(product.title||product.name||'');
+   const desc=textKey(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
+   const type=textKey(product.product_type||product.category||'');
+   const tags=textKey(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
+   const source=type+' '+tags+' '+title+' '+desc;
+   const rules=[
+    [/car mount|car holder|dashboard mount|phone holder for car|حامل سيارة/,['حوامل السيارات','هولدر سيارة','حامل سيارة']],
+    [/power bank|powerbank|portable power|battery pack|باور بانك|بطارية متنقلة/,['باور بانك','باوربانك','بطاريات متنقلة']],
+    [/screen protector|tempered glass|privacy glass|camera lens protector|لزقة شاشة|حماية شاشة/,['لزقات الحماية','حماية الشاشة','لزقات','حماية']],
+    [/usb c cable|type c cable|lightning cable|data cable|charging cable|aux cable|audio cable|hdmi cable|\\bcables?\\b|\\bwires?\\b|كيبل|كابل|وصلة شحن|سلك شحن/,['الكوابل','كابلات','كوابل','الأسلاك']],
+    [/adapter|converter|dongle|otg|usb hub|card reader|memory card|flash drive|usb drive|محول|قارئ ذاكرة|فلاش ميموري/,['محولات','وصلات ومحولات','أدابتور','ذاكرة وفلاش']],
+    [/wall charger|gan charger|wireless charger|charging station|power adapter|\\bcharger\\b|\\bcharging\\b|شاحن|شواحن|قاعدة شحن/,['الشواحن','شواحن','شاحن']],
+    [/earbuds|earphones|headphones|headsets|speaker|microphone|\\baudio\\b|\\btws\\b|سماعة|سماعات|هيدفون|مكبر صوت/,['السماعات','سماعات','سماعات الرأس','صوتيات']],
+    [/airpods case|earbuds case|phone case|mobile case|protective case|silicone case|clear case|\\bcases?\\b|phone cover|كفر|كفرات|جراب|حافظة موبايل/,['الكفرات','كفرات الموبايل','حافظات الموبايل','كفرات ايربودز']],
+    [/airpods|wireless earbuds|true wireless|ايربودز|ايربود/,['AirPods','سماعات','السماعات']],
+    [/desktop stand|desk stand|tablet stand|phone stand|selfie stick|tripod|gimbal|\\bholder\\b|\\bmount\\b|ستاند|ترايبود|عصا سيلفي/,['حوامل الموبايل','حوامل','ستاندات']],
+    [/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعة ذكية|سوار ساعة/,['الساعات','إكسسوارات الساعات']]
+   ];
+   const active=categories.filter(c=>c.is_active!==false);
+   for(const [pattern,aliases] of rules){
+     if(!pattern.test(source)) continue;
+     const found=active.find(c=>aliases.some(alias=>textKey(c.name)===textKey(alias)));
+     if(found) return found.id;
+   }
+   const misc=active.find(c=>['اكسسوارات متنوعة','متنوع','اخرى','other accessories'].includes(textKey(c.name)));
+   return misc?misc.id:null;
+ }
+ async function importBrand(brand, urls, button) {
+   if(!db||!button)return;
+   if(!confirm('سيتم جلب المنتجات التي يتيحها '+brand+' للعامة مع صورها. لن تظهر الأسعار للزبائن. متابعة؟'))return;
+   button.disabled=true;say('#importMessage','جارٍ جلب منتجات '+brand+'…');
+   try{
+     let products=null,lastError=null;
      for(const url of urls){
        try{
          const response=await fetch(url,{headers:{Accept:'application/json'}});
-         if(!response.ok) throw new Error('HTTP '+response.status);
-         const json=await response.json();
-         if(Array.isArray(json.products)){source=json.products;break;}
-         throw new Error('الرد ليس قائمة منتجات');
-       }catch(error){failure=error;}
+         if(!response.ok)throw new Error('HTTP '+response.status);
+         const data=await response.json();
+         if(Array.isArray(data.products)){products=data.products;break;}
+         throw new Error('الكتالوج لا يوفر قائمة JSON بهذا المسار');
+       }catch(err){lastError=err;}
      }
-     if(!source) throw new Error('الموقع منع الجلب المباشر من المتصفح. '+(failure?.message||''));
-     if(!source.length) throw new Error('لم يرجع الكتالوج أي منتجات.');
-     say('#importMessage','وجدنا '+source.length+' منتجًا. جارٍ تجهيز القائمة…');
-     const [oldRes,catRes]=await Promise.all([
-       db.from('products').select('name,brand'),
-       db.from('categories').select('*').eq('is_active',true).order('sort_order')
-     ]);
-     if(oldRes.error) throw oldRes.error;
-     if(catRes.error) throw catRes.error;
-     const existing=new Set((oldRes.data||[]).filter(p=>(p.brand||'').toLowerCase()==='joyroom').map(p=>(p.name||'').trim().toLowerCase()));
-     const cats=catRes.data||[];
-     const getCategory=(p)=>{
-       const s=[p.title,p.product_type,Array.isArray(p.tags)?p.tags.join(' '):p.tags].join(' ').toLowerCase();
-       const checks=[
-         [/power bank|battery|batteries/i,['باور','بطارية','طاقة']],
-         [/charger|charging station|adapter/i,['شاحن','شواحن','طاقة','محول']],
-         [/cable|data cable/i,['كابل','كيبل','سلك']],
-         [/earbud|headphone|earphone|speaker|audio/i,['سماعة','سماعات','صوت']],
-         [/holder|mount|stand/i,['حامل','ستاند','حوامل']],
-         [/watch|wearable/i,['ساعة','ساعات','ذكية']],
-         [/car|fm transmitter|aux/i,['سيارة','سيارات','سيار']]
-       ];
-       for(const [re,terms] of checks){if(re.test(s)){const found=cats.find(c=>terms.some(t=>(c.name||'').toLowerCase().includes(t)));if(found)return found.id;}}
-       return cats[0]?.id||null;
-     };
+     if(!products)throw new Error('الموقع لم يسمح بجلب القائمة مباشرة. '+(lastError?.message||''));
+     const [oldRes,catRes]=await Promise.all([db.from('products').select('name,brand'),db.from('categories').select('*').eq('is_active',true)]);
+     if(oldRes.error)throw oldRes.error;if(catRes.error)throw catRes.error;
+     const old=new Set((oldRes.data||[]).filter(p=>textKey(p.brand)===textKey(brand)).map(p=>textKey(p.name)));
      const rows=[];
-     for(const p of source){
-       const name=String(p.title||'').trim();
-       if(!name||existing.has(name.toLowerCase())) continue;
-       const image=(p.images||[]).map(im=>typeof im==='string'?im:im.src).find(Boolean)||p.image?.src||null;
-       const description=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim().slice(0,600);
-       rows.push({name,brand:'JOYROOM',category_id:getCategory(p),price:0,stock_quantity:999,description,image_url:image,is_featured:false,is_active:true});
+     for(const p of products){
+       const name=String(p.title||'').trim();if(!name||old.has(textKey(name)))continue;
+       const image=(p.images||[]).map(i=>typeof i==='string'?i:i.src).find(Boolean)||p.image?.src||null;
+       const description=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\\s+/g,' ').trim().slice(0,600);
+       rows.push({name,brand,category_id:chooseProductCategory({...p,title:name,body_html:description},catRes.data||[]),price:0,stock_quantity:0,description,image_url:image,is_featured:false,is_active:true});
      }
-     if(!rows.length){say('#importMessage','ما في منتجات جديدة؛ المنتجات الموجودة من JOYROOM تم استيرادها مسبقًا.');return;}
-     let inserted=0;
-     for(let i=0;i<rows.length;i+=20){
-       const part=rows.slice(i,i+20);
-       const result=await db.from('products').insert(part).select('id');
-       if(result.error) throw new Error('تمت إضافة '+inserted+' منتج قبل الخطأ: '+result.error.message);
-       inserted+=(result.data||[]).length;
-       say('#importMessage','تمت إضافة '+inserted+' من '+rows.length+' منتج…');
+     if(!rows.length){say('#importMessage','لا توجد منتجات جديدة من '+brand+'.');return;}
+     let count=0,uncategorized=0;
+     for(let i=0;i<rows.length;i+=15){
+       const batch=rows.slice(i,i+15);
+       const result=await db.from('products').insert(batch).select('id');
+       if(result.error)throw new Error('أُضيف '+count+' منتج قبل الخطأ: '+result.error.message);
+       count+=(result.data||[]).length;
+       uncategorized+=batch.filter(p=>!p.category_id).length;
+       say('#importMessage','تمت إضافة '+count+' من '+rows.length+' منتج…');
      }
      await loadAll();
-     say('#importMessage','تم الاستيراد بنجاح: '+inserted+' منتج جديد. تم حفظ الصور المتاحة، والأسعار غير معروضة.');
-   } catch(error) {
-     say('#importMessage','لم يكتمل الاستيراد: '+(error?.message||'خطأ غير معروف')+'. أرسل لي نص هذه الرسالة لأجهز طريقة بديلة.');
-   } finally {joyroomButton.disabled=false;}
- });
-
+     say('#importMessage','اكتمل استيراد '+brand+': '+count+' منتج. منتجات بلا تصنيف واضح: '+uncategorized+'؛ تُركت دون تصنيف تخميني.');
+   }catch(err){say('#importMessage','تعذّر استيراد '+brand+': '+(err.message||'خطأ غير معروف'));}
+   finally{button.disabled=false;}
+ }
+ $('#importJoyroom')?.addEventListener('click',()=>importBrand('JOYROOM',['https://www.joyroom.com/products.json?limit=250','https://www.joyroom.com/collections/all/products.json?limit=250'],$('#importJoyroom')));
+ $('#importWiwu')?.addEventListener('click',()=>importBrand('WiWU',['https://www.wiwu.com/products.json?limit=250','https://www.wiwu.com/collections/all/products.json?limit=250'],$('#importWiwu')));
+ $('#importAnker')?.addEventListener('click',()=>importBrand('Anker',['https://www.anker.com/products.json?limit=250','https://us.anker.com/products.json?limit=250','https://us.anker.com/collections/all/products.json?limit=250'],$('#importAnker')));
 
  const fixCatsButton=$('#fixJoyroomCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
