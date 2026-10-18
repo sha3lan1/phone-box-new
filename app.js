@@ -7,16 +7,42 @@
   const escapeHtml = (v='') => String(v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const imageFor = (p) => p.image_url || (Array.isArray(p.images) && p.images[0]) || '';
   const fallbackImage = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="100%" height="100%" fill="#f0efec"/><g fill="none" stroke="#b6b4ae" stroke-width="5"><rect x="235" y="100" width="130" height="245" rx="24"/><circle cx="300" cy="310" r="5"/></g><text x="300" y="400" text-anchor="middle" fill="#686761" font-family="Arial" font-size="22">PHONE BOX</text></svg>');
-  const categoryName = (id) => state.categories.find(c => String(c.id) === String(id))?.name || 'إكسسوارات متنوعة';
+  const categoryDisplayName = (name) => {
+    const n=String(name||'').toLowerCase().replace(/[إأآ]/g,'ا').replace(/ة/g,'ه');
+    if(/screen protector|tempered glass|لزقات الحمايه|حمايه الشاشه/.test(n))return 'Screen Protectors';
+    if(/airpods case|earbuds case|كفرات ايربود/.test(n))return 'AirPods Cases';
+    if(/phone case|phone cover|كفرات الموبايل|حافظات الموبايل|كفر الموبايل/.test(n))return 'Phone Cases';
+    if(/power bank|powerbank|باور بانك|باوربانك/.test(n))return 'Power Banks';
+    if(/car charger|شاحن سياره|شواحن السيارات/.test(n))return 'Car Chargers';
+    if(/car mount|car holder|حوامل السيارات|هولدر سياره|حامل سياره/.test(n))return 'Car Mounts';
+    if(/wireless charger|شاحن لاسلكي/.test(n))return 'Wireless Chargers';
+    if(/charger|charging|شاحن|شواحن/.test(n))return 'Chargers';
+    if(/cable|cables|caple|كيبل|كابل|كوابل|كابلات/.test(n))return 'Cables';
+    if(/adapter|converter|dongle|usb hub|otg|محول|محولات/.test(n))return 'Adapters & Hubs';
+    if(/headphone|headset|هيدفون|سماعات الراس/.test(n))return 'Headphones';
+    if(/earbud|airpods|earphone|ايربود|سماعات/.test(n))return 'AirPods & Earbuds';
+    if(/watch|ساعات|الساعات/.test(n))return 'Watch Accessories';
+    if(/selfie stick|tripod|عصا سيلفي|ترايبود/.test(n))return 'Selfie Sticks & Tripods';
+    if(/ring light|رينج لايت/.test(n))return 'Ring Lights';
+    if(/stand|holder|ستاند|حوامل/.test(n))return 'Phone Stands';
+    if(/memory card|flash drive|usb drive|ذاكره|فلاش ميموري/.test(n))return 'Memory Cards & USB Drives';
+    if(/cleaning|cleaner|تنظيف/.test(n))return 'Cleaning Kits';
+    if(/stylus|قلم لمس|قلم ايباد/.test(n))return 'Styluses';
+    if(/tablet|ipad|تابلت|ايباد/.test(n))return 'Tablet Accessories';
+    if(/aux|audio adapter|محول صوت/.test(n))return 'Audio Adapters';
+    if(/other|اخرى|متنوع/.test(n))return 'Other Accessories';
+    return name;
+  };
+  const categoryName = (id) => { const c=state.categories.find(c => String(c.id) === String(id)); return c?categoryDisplayName(c.name):'Other Accessories'; };
   function renderCategories() {
     const grid = $('#categoryGrid'), filter = $('#categoryFilter');
     const active = state.categories.filter(c => c.is_active !== false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
     const norm = v => String(v||'').toLowerCase().replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
     const mainRules = [
-      {key:'chargers', terms:['شواحن','شاحن','charger','charging'], label:'الشواحن'},
-      {key:'airpods', terms:['ايربود','airpods','air pods','سماعات ابل'], label:'AirPods'},
-      {key:'powerbank', terms:['باور بانك','باوربانك','power bank','powerbank'], label:'باور بانك'},
-      {key:'cases', terms:['كفرات','كفر','cases','phone case','حافظات الموبايل'], label:'الكفرات'}
+      {key:'chargers', terms:['شواحن','شاحن','charger','charging'], label:'Chargers'},
+      {key:'airpods', terms:['ايربود','airpods','air pods','سماعات ابل'], label:'AirPods & Earbuds'},
+      {key:'powerbank', terms:['باور بانك','باوربانك','power bank','powerbank'], label:'Power Banks'},
+      {key:'cases', terms:['كفرات','كفر','cases','phone case','phone cover','حافظات الموبايل'], label:'Phone Cases'}
     ];
     const main = [];
     const used = new Set();
