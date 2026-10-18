@@ -41,7 +41,7 @@
 
  // Product classification by type/name/tags/description, independent of brand.
  const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\\u0600-\\u06FF]+/g,' ').trim();
- const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_mounts:'Car Mounts',car_chargers:'Car Chargers',adapters:'Adapters & Hubs',headphones:'Headphones',watch_accessories:'Watch Accessories',stands:'Phone Stands',memory_storage:'Memory Cards & USB Drives',cleaning:'Cleaning Kits',selfie_tripods:'Selfie Sticks & Tripods',tablet_accessories:'Tablet Accessories',ring_lights:'Ring Lights',styluses:'Styluses',audio_adapters:'Audio Adapters',wired_earphones:'Wired Earphones',other:'Other Accessories'};
+ const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_mounts:'Car Mounts',car_chargers:'Car Chargers',adapters:'Adapters & Hubs',headphones:'Headphones',watch_accessories:'Watch Accessories',stands:'Phone Stands',memory_storage:'Memory Cards & USB Drives',cleaning:'Cleaning Kits',selfie_tripods:'Selfie Sticks & Tripods',tablet_accessories:'Tablet Accessories',ring_lights:'Ring Lights',styluses:'Styluses',audio_adapters:'Audio Adapters',wired_earphones:'Wired Earphones',other:'Other Accessories',needs_review:'Needs Review'};
  function categoryGroup(name){
    const n=textKey(name);
    if(/screen protector|tempered glass|privacy glass|camera lens protector|لزقات الحمايه|حمايه الشاشه|لزقات شاشه/.test(n))return 'screen_protectors';
@@ -66,6 +66,7 @@
    if(/tablet|ipad accessories|اكسسوارات التابلت|اكسسوارات الايباد/.test(n))return 'tablet_accessories';
    if(/audio adapter|aux adapter|aux cable|audio cable|محول صوت|وصله aux/.test(n))return 'audio_adapters';
    if(/wired earphone|wired headset|سماعات سلكيه/.test(n))return 'wired_earphones';
+   if(/needs review|غير مصنف|بحاجه لمراجعه/.test(n))return 'needs_review';
    if(/other accessories|miscellaneous|متنوع|اكسسوارات متنوعه|اخرى/.test(n))return 'other';
    return null;
  }
@@ -154,25 +155,50 @@
  $('#importWiwu')?.addEventListener('click',()=>importBrand('WiWU',['https://www.wiwu.com/products.json?limit=250','https://www.wiwu.com/collections/all/products.json?limit=250'],$('#importWiwu')));
  $('#importAnker')?.addEventListener('click',()=>importBrand('Anker',['https://www.anker.com/products.json?limit=250','https://us.anker.com/products.json?limit=250','https://us.anker.com/collections/all/products.json?limit=250'],$('#importAnker')));
 
+ async function ensureCategory(group, categories){
+   const name=categoryLabels[group]||'Needs Review';
+   let existing=categories.find(c=>categoryGroup(c.name)===group);
+   if(existing)return existing.id;
+   const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+   const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
+   const result=await db.from('categories').insert({name,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
+   if(result.error){
+     const again=await db.from('categories').select('*').eq('name',name).maybeSingle();
+     if(again.data){categories.push(again.data);return again.data.id;}
+     throw new Error('Could not create category '+name+': '+result.error.message);
+   }
+   categories.push(result.data);return result.data.id;
+ }
  const fixCatsButton=$('#fixAllCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
-   if(!confirm('Reclassify ALL products from every brand using product names and descriptions? Products with no clear match will be removed from the incorrect category instead of being placed in Phone Cases. Continue?'))return;
-   fixCatsButton.disabled=true;say('#importMessage','Reviewing product descriptions and categories…');
+   if(!confirm('Analyze every product from all brands. Products will be moved by their names/descriptions, and missing categories will be created in English. Products with insufficient information will go to Needs Review. Continue?'))return;
+   fixCatsButton.disabled=true;say('#importMessage','Analyzing product names and descriptions…');
    try{
      const [cr,pr]=await Promise.all([db.from('categories').select('*').eq('is_active',true),db.from('products').select('id,name,brand,description,category_id')]);
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
-     let moved=0,cleared=0,unchanged=0;
+     let categories=cr.data||[],moved=0,created=0,review=0,unchanged=0;
      for(const p of pr.data||[]){
-       const category_id=chooseProductCategory({title:p.name,description:p.description},cr.data||[]);
-       const next=category_id||null;
-       if(String(next||'')===String(p.category_id||'')){unchanged++;continue;}
-       const result=await db.from('products').update({category_id:next}).eq('id',p.id);
-       if(result.error)throw new Error('Stopped after '+moved+' changes: '+result.error.message);
-       if(next)moved++;else cleared++;
+       const group=detectProductGroup({title:p.name,description:p.description});
+       let categoryId;
+       if(group){
+         const before=categories.length;
+         categoryId=await ensureCategory(group,categories);
+         if(categories.length>before)created++;
+       }else{
+         const before=categories.length;
+         categoryId=await ensureCategory('needs_review',categories);
+         if(categories.length>before)created++;
+         review++;
+       }
+       if(String(categoryId)===String(p.category_id||'')){unchanged++;continue;}
+       const result=await db.from('products').update({category_id:categoryId}).eq('id',p.id);
+       if(result.error)throw new Error('Stopped after '+moved+' product updates: '+result.error.message);
+       moved++;
+       if(moved%20===0)say('#importMessage','Classified '+moved+' products…');
      }
      await loadAll();
-     say('#importMessage','Finished. Correctly classified/moved: '+moved+'. Removed from an incorrect category because the type was unclear: '+cleared+'. Already matched: '+unchanged+'.');
-   }catch(err){say('#importMessage','Could not finish reclassification: '+(err.message||'Unknown error'));}
+     say('#importMessage','Done. Products moved: '+moved+'. New categories created: '+created+'. Products needing review: '+review+'. Already correct: '+unchanged+'.');
+   }catch(err){say('#importMessage','Could not complete classification: '+(err.message||'Unknown error'));}
    finally{fixCatsButton.disabled=false;}
  });
 
