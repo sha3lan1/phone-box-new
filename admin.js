@@ -110,7 +110,7 @@
        }catch(err){lastError=err;}
      }
      if(!products)throw new Error('الموقع لم يسمح بجلب القائمة مباشرة. '+(lastError?.message||''));
-     const [oldRes,catRes]=await Promise.all([db.from('products').select('name,brand'),db.from('categories').select('*').eq('is_active',true)]);
+     const [oldRes,catRes]=await Promise.all([db.from('products').select('name,brand'),db.from('categories').select('*')]);
      if(oldRes.error)throw oldRes.error;if(catRes.error)throw catRes.error;
      const old=new Set((oldRes.data||[]).filter(p=>textKey(p.brand)===textKey(brand)).map(p=>textKey(p.name)));
      const rows=[];
@@ -118,9 +118,13 @@
        const name=String(p.title||'').trim();if(!name||old.has(textKey(name)))continue;
        const image=(p.images||[]).map(i=>typeof i==='string'?i:i.src).find(Boolean)||p.image?.src||null;
        const body=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim(); const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||''); const description=body.slice(0,600);
-       rows.push({name,brand,category_id:chooseProductCategory({...p,title:name,body_html:description},catRes.data||[]),price:0,stock_quantity:0,description,image_url:image,is_featured:false,is_active:true});
+       const categoryList=catRes.data||[];
+       const group=detectProductGroup({...p,title:name,body_html:description,description,product_type:p.product_type,tags:p.tags});
+       const category_id=await ensureCategory(group||'needs_review',categoryList);
+       rows.push({name,brand,category_id,price:0,stock_quantity:0,description,image_url:image,is_featured:false,is_active:true});
+       old.add(textKey(name));
      }
-     if(!rows.length){say('#importMessage','No new products found for '+brand+'.');return true;}
+     if(!rows.length){say('#importMessage','The feed responded for '+brand+', but there were no new products to add. This does not prove the full catalog was retrieved.');return {ok:true,imported:0,found:products.length};}
      let count=0,uncategorized=0;
      for(let i=0;i<rows.length;i+=15){
        const batch=rows.slice(i,i+15);
@@ -132,8 +136,8 @@
      }
      await loadAll();
      say('#importMessage','Imported '+count+' new products from '+brand+'. Products needing review: '+uncategorized+'.');
-     return true;
-   }catch(err){say('#importMessage','Could not import '+brand+': '+(err.message||'Unknown error'));return false;}
+     return {ok:true,imported:count,found:products.length};
+   }catch(err){say('#importMessage','Could not import '+brand+': '+(err.message||'Unknown error'));return {ok:false,imported:0,found:0};}
    finally{if(!options.keepDisabled)button.disabled=false;}
  }
  const syncCatalogsButton=$('#syncAllCatalogs');
@@ -145,56 +149,70 @@
      ['WiWU',['https://www.wiwu.com/products.json?limit=250','https://www.wiwu.com/collections/all/products.json?limit=250']],
      ['Anker',['https://www.anker.com/products.json?limit=250','https://us.anker.com/products.json?limit=250','https://us.anker.com/collections/all/products.json?limit=250']]
    ];
-   let success=0;
+   let success=0,totalImported=0,totalFound=0;
    for(const [brand,urls] of feeds){
-     const ok=await importBrand(brand,urls,syncCatalogsButton,{silent:true,keepDisabled:true});
-     if(ok)success++;
+     const result=await importBrand(brand,urls,syncCatalogsButton,{silent:true,keepDisabled:true});
+     if(result&&result.ok){success++;totalImported+=result.imported||0;totalFound+=result.found||0;}
    }
    syncCatalogsButton.disabled=false;
-   if(success===3)say('#importMessage','All three public catalog feeds responded. This does not guarantee each supplier exposes its entire catalog through the public feed; review the product count before considering the catalog complete.');
-   else say('#importMessage','Only '+success+' of 3 catalog feeds responded successfully. Check the message above before assuming imports are complete.');
+   say('#importMessage','Feed attempts completed: '+success+'/3. Newly imported: '+totalImported+'. Products returned by accessible feeds: '+totalFound+'. Public feeds may be blocked or limited; this is not proof of a complete supplier catalog. Review the product list before relying on it.');
  });
 
  async function ensureCategory(group, categories){
    const name=categoryLabels[group]||'Needs Review';
-   // Always check semantic match, exact unique name, and unique slug before insert.
-   let existing=categories.find(c=>categoryGroup(c.name)===group);
-   if(!existing){
-     const byName=await db.from('categories').select('*').eq('name',name).maybeSingle();
-     if(byName.error)throw new Error('Could not check category '+name+'.');
-     existing=byName.data||null;
-   }
    const slug=name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-   if(!existing){
-     const bySlug=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
-     if(bySlug.error)throw new Error('Could not check category slug for '+name+'.');
-     existing=bySlug.data||null;
-   }
-   if(existing){
-     if(existing.is_active===false){
-       const activated=await db.from('categories').update({is_active:true}).eq('id',existing.id).select('*').single();
-       if(activated.error)throw new Error('Could not activate existing category '+name+'.');
-       existing=activated.data;
+   const addLocal=(row)=>{if(!row)return;const index=categories.findIndex(c=>String(c.id)===String(row.id));if(index>=0)categories[index]=row;else categories.push(row);};
+   const activate=async(row)=>{
+     if(row.is_active===false){
+       const result=await db.from('categories').update({is_active:true}).eq('id',row.id).select('*').single();
+       if(result.error)throw new Error('Could not activate existing category "'+name+'".');
+       row=result.data;
      }
-     if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
-     return existing.id;
+     addLocal(row);return row.id;
+   };
+   // Canonical name and slug are checked before any insert or rename.
+   let found=categories.find(c=>c.name===name)||null;
+   if(!found){
+     const byName=await db.from('categories').select('*').eq('name',name).maybeSingle();
+     if(byName.error)throw new Error('Could not check existing category "'+name+'".');
+     found=byName.data||null;
    }
+   if(!found){
+     found=categories.find(c=>String(c.slug||'')===slug)||null;
+     if(!found){
+       const bySlug=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
+       if(bySlug.error)throw new Error('Could not check the existing category reference for "'+name+'".');
+       found=bySlug.data||null;
+     }
+   }
+   if(!found){
+     found=categories.find(c=>categoryGroup(c.name)===group)||null;
+     if(found&&found.name!==name){
+       // Canonical name and slug were checked above; normalize an equivalent legacy category safely.
+       const renamed=await db.from('categories').update({name,slug,is_active:true}).eq('id',found.id).select('*').single();
+       if(!renamed.error)found=renamed.data;
+       else{
+         const [retryName,retrySlug]=await Promise.all([
+           db.from('categories').select('*').eq('name',name).maybeSingle(),
+           db.from('categories').select('*').eq('slug',slug).maybeSingle()
+         ]);
+         found=retryName.data||retrySlug.data||null;
+         if(!found)throw new Error('Could not safely normalize the existing category "'+name+'".');
+       }
+     }
+   }
+   if(found)return activate(found);
    const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
    const result=await db.from('categories').insert({name,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
-   if(result.error){
-     // Reconcile uniqueness conflicts without asking the user to find products.
-     const [retryName,retrySlug]=await Promise.all([
-       db.from('categories').select('*').eq('name',name).maybeSingle(),
-       db.from('categories').select('*').eq('slug',slug).maybeSingle()
-     ]);
-     existing=retryName.data||retrySlug.data||null;
-     if(existing){
-       if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
-       return existing.id;
-     }
-     throw new Error('Could not match or create category automatically. Please refresh the admin panel and run the bulk operation again.');
-   }
-   categories.push(result.data);return result.data.id;
+   if(!result.error){addLocal(result.data);return result.data.id;}
+   // If another row already owns the name or slug, reuse it instead of repeating the insert.
+   const [byName,bySlug]=await Promise.all([
+     db.from('categories').select('*').eq('name',name).maybeSingle(),
+     db.from('categories').select('*').eq('slug',slug).maybeSingle()
+   ]);
+   found=byName.data||bySlug.data||null;
+   if(found)return activate(found);
+   throw new Error('The category could not be reconciled automatically. No duplicate category was created.');
  }
  const fixCatsButton=$('#fixAllCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
@@ -205,62 +223,10 @@
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
      let categories=cr.data||[], products=pr.data||[], moved=0,created=0,review=0;
      const ensure=async(group)=>{
-       const label=categoryLabels[group]||'Needs Review';
-       // First reuse a semantically matching category already loaded.
-       let matching=categories.find(c=>categoryGroup(c.name)===group);
-       if(matching){
-         if(matching.is_active===false){
-           const active=await db.from('categories').update({is_active:true}).eq('id',matching.id).select('*').single();
-           if(active.error)throw new Error('Could not activate existing category '+label+'.');
-           matching=active.data;
-         }
-         return matching.id;
-       }
-       const slug=label.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-       // Unique name and slug constraints are independent. Check BOTH before inserting.
-       const byName=await db.from('categories').select('*').eq('name',label).maybeSingle();
-       if(byName.error)throw new Error('Could not check existing category '+label+'.');
-       if(byName.data){
-         let existing=byName.data;
-         if(existing.is_active===false){
-           const active=await db.from('categories').update({is_active:true}).eq('id',existing.id).select('*').single();
-           if(active.error)throw new Error('Could not activate existing category '+label+'.');
-           existing=active.data;
-         }
-         if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
-         return existing.id;
-       }
-       const bySlug=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
-       if(bySlug.error)throw new Error('Could not check category slug for '+label+'.');
-       if(bySlug.data){
-         let existing=bySlug.data;
-         // Reuse the slug owner. Do not rename it here: renames are handled by the
-         // duplicate-merging pass, which checks unique names before changing anything.
-         if(existing.is_active===false){
-           const active=await db.from('categories').update({is_active:true}).eq('id',existing.id).select('*').single();
-           if(active.error)throw new Error('Could not activate the existing category record.');
-           existing=active.data;
-         }
-         if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
-         return existing.id;
-       }
-       const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
-       const result=await db.from('categories').insert({name:label,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
-       if(result.error){
-         // Resolve uniqueness races and old records by name OR slug; never ask the
-         // user to identify individual products or create a duplicate category.
-         const [retryName,retrySlug]=await Promise.all([
-           db.from('categories').select('*').eq('name',label).maybeSingle(),
-           db.from('categories').select('*').eq('slug',slug).maybeSingle()
-         ]);
-         const existing=retryName.data||retrySlug.data;
-         if(existing){
-           if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
-           return existing.id;
-         }
-         throw new Error('A category could not be created or matched automatically. No duplicate category was added.');
-       }
-       categories.push(result.data);created++;return result.data.id;
+       const before=categories.length;
+       const id=await ensureCategory(group,categories);
+       if(categories.length>before)created++;
+       return id;
      };
      for(const p of products){
        const detected=detectProductGroup({title:p.name,description:p.description});
@@ -315,19 +281,16 @@
          }
        }
      }
-     // Keep unrelated Arabic/unknown category labels out of the public English UI.
+     // Keep every unrecognized legacy category out of the public UI, after safely moving its products.
      const finalCats=await db.from('categories').select('*');
      if(finalCats.error)throw finalCats.error;
+     const reviewId=await ensure('needs_review');
      for(const c of finalCats.data||[]){
-       if(c.is_active===false)continue;
-       if(!categoryGroup(c.name)){
-         const name=String(c.name||'');
-         if(/\p{Script=Arabic}/u.test(name)){
-           const reviewId=await ensure('needs_review');
-           await db.from('products').update({category_id:reviewId}).eq('category_id',c.id);
-           await db.from('categories').update({is_active:false}).eq('id',c.id);
-         }
-       }
+       if(c.is_active===false||categoryGroup(c.name))continue;
+       const move=await db.from('products').update({category_id:reviewId}).eq('category_id',c.id);
+       if(move.error)throw new Error('Could not move products from an unrecognized category into Needs Review.');
+       const deactivate=await db.from('categories').update({is_active:false}).eq('id',c.id);
+       if(deactivate.error)throw new Error('Could not deactivate an unrecognized category after moving its products.');
      }
      await loadAll();
      say('#importMessage','Finished. Products moved to their best-matched supplier-style category: '+moved+'. New categories: '+created+'. Products needing manual review: '+review+'. Duplicate categories were merged. Only active English categories remain in the admin category list.');
