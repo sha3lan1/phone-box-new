@@ -46,7 +46,7 @@
    const n=textKey(name);
    if(/screen protector|tempered glass|privacy glass|camera lens protector|لزقات الحمايه|حمايه الشاشه|لزقات شاشه/.test(n))return 'screen_protectors';
    if(/airpods case|earbuds case|كفرات ايربود|كفر ايربود/.test(n))return 'airpods_cases';
-   if(/phone case|phone cover|mobile case|phone covers|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل|^كفرات$|^الكفرات$|^كفر$/.test(n))return 'phone_cases';
+   if(/phone case|phone cover|mobile case|phone covers|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات ابل|كفرات سامسونج|^كفرات$|^الكفرات$|^كفر$/.test(n))return 'phone_cases';
    if(/power bank|powerbank|باور بانك|باوربانك|بطاريات متنقله/.test(n))return 'power_banks';
    if(/car charger|شاحن سياره|شواحن السيارات/.test(n))return 'car_chargers';
    if(/car mount|car holder|car mounts|حوامل السيارات|هولدر سياره|حامل سياره/.test(n))return 'car_mounts';
@@ -132,7 +132,7 @@
      for(const p of products){
        const name=String(p.title||'').trim();if(!name||old.has(textKey(name)))continue;
        const image=(p.images||[]).map(i=>typeof i==='string'?i:i.src).find(Boolean)||p.image?.src||null;
-       const description=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\\s+/g,' ').trim().slice(0,600);
+       const body=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\\s+/g,' ').trim(); const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||''); const description=[p.product_type?'Type: '+p.product_type:'',tags?'Tags: '+tags:'',body].filter(Boolean).join(' · ').slice(0,600);
        rows.push({name,brand,category_id:chooseProductCategory({...p,title:name,body_html:description},catRes.data||[]),price:0,stock_quantity:0,description,image_url:image,is_featured:false,is_active:true});
      }
      if(!rows.length){say('#importMessage','لا توجد منتجات جديدة من '+brand+'.');return;}
