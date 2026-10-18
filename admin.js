@@ -183,10 +183,23 @@
        const label=categoryLabels[group]||'Needs Review';
        const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
        const slug=label.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+       // Reuse a category that already owns this unique slug instead of trying to insert a duplicate.
+       const slugMatch=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
+       if(slugMatch.error)throw new Error('Could not check existing category '+label+': '+slugMatch.error.message);
+       if(slugMatch.data){
+         let existing=slugMatch.data;
+         if(existing.name!==label||existing.is_active===false){
+           const updated=await db.from('categories').update({name:label,is_active:true}).eq('id',existing.id).select('*').single();
+           if(updated.error)throw new Error('Could not reuse existing category '+label+': '+updated.error.message);
+           existing=updated.data;
+         }
+         categories.push(existing);return existing.id;
+       }
        const result=await db.from('categories').insert({name:label,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
        if(result.error){
-         const retry=await db.from('categories').select('*').eq('name',label).maybeSingle();
-         if(retry.error||!retry.data)throw new Error('Could not create '+label+': '+result.error.message);
+         // A concurrent/previous record may have appeared between the lookup and insert; re-read by slug/name.
+         const retry=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
+         if(retry.error||!retry.data)throw new Error('Could not create category '+label+': '+result.error.message);
          categories.push(retry.data);return retry.data.id;
        }
        categories.push(result.data);created++;return result.data.id;
