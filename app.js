@@ -12,7 +12,8 @@
       [/needs review|غير مصنف|بحاجه لمراجعه/,'Needs Review'],
       [/screen protector|tempered glass|privacy glass|screen guard|camera lens protector|لزقات الحمايه|حمايه الشاشه|لزقات شاشه|حمايه عدسه/,'Screen Protectors'],
       [/airpods case|earbuds case|case for airpods|كفرات ايربود|كفر ايربود|كفر سماعات/,'AirPods Cases'],
-      [/phone case|phone cover|mobile case|phone covers|iphone case|كفرات الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات سامسونج|كفر موبايل/,'Phone Cases'],
+      [/^case$/,'Case'],
+      [/phone case|phone cover|mobile case|phone covers|iphone case|كفرات الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات سامسونج|كفر موبايل/,'Case'],
       [/power bank|powerbank|باور بانك|باوربانك/,'Power Banks'],
       [/car charger|car mount|car holder|car accessories|automobile|dashboard mount|هولدر سياره|حامل سياره|شاحن سياره|اكسسوارات السياره|مرسل fm/,'Car Accessories'],
       [/wireless charger|magsafe charger|شاحن لاسلكي/,'Wireless Chargers'],
@@ -45,9 +46,9 @@
     const active=state.categories.filter(c=>c.is_active!==false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
     const specs=[
       {key:'chargers',label:'Chargers',terms:['chargers','wall chargers','شواحن','شاحن']},
-      {key:'earbuds',label:'AirPods & Earbuds',terms:['airpods & earbuds','earbuds','airpods','سماعات','ايربود']},
+      {key:'screen-protectors',label:'Screen Protectors',terms:['screen protectors','screen protector','tempered glass','حماية الشاشة','لزقات الحماية']},
       {key:'powerbanks',label:'Power Banks',terms:['power banks','power bank','باور بانك']},
-      {key:'cases',label:'Phone Cases',terms:['phone cases','phone case','phone covers','كفرات','كفر']}
+      {key:'cases',label:'Case',terms:['phone cases','phone case','phone covers','كفرات','كفر']}
     ];
     const used=new Set(),main=[];
     for(const spec of specs){
