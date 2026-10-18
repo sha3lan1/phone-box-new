@@ -68,8 +68,28 @@
     state.categories = cats.data || []; state.products = prods.data || [];
     renderCategories(); renderProducts();
   }
+  const drawer = $('#sideDrawer'), backdrop = $('#drawerBackdrop'), menuToggle = $('#menuToggle');
+  function setDrawer(open) {
+    if (!drawer) return;
+    drawer.classList.toggle('open', open);
+    if (backdrop) backdrop.classList.toggle('visible', open);
+    drawer.setAttribute('aria-hidden', String(!open));
+    if (menuToggle) menuToggle.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('drawer-open', open);
+  }
+  if (menuToggle) menuToggle.addEventListener('click', () => setDrawer(!drawer.classList.contains('open')));
+  if ($('#closeDrawer')) $('#closeDrawer').addEventListener('click', () => setDrawer(false));
+  if (backdrop) backdrop.addEventListener('click', () => setDrawer(false));
+  if ($('#otherProductsToggle')) $('#otherProductsToggle').addEventListener('click', () => {
+    const panel = $('#otherProductsMenu'), button = $('#otherProductsToggle');
+    const open = panel.hidden;
+    panel.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+    const sign = button.querySelector('span');
+    if (sign) sign.textContent = open ? '−' : '＋';
+  });
   document.addEventListener('click', e => {
-    const cat = e.target.closest('[data-category]'); if (cat) { state.category = cat.dataset.category; $('#categoryFilter').value=state.category; renderCategories(); renderProducts(); $('#products').scrollIntoView({behavior:'smooth'}); }
+    const cat = e.target.closest('[data-category]'); if (cat) { state.category = cat.dataset.category; $('#categoryFilter').value=state.category; renderCategories(); renderProducts(); if (drawer && drawer.contains(cat)) setDrawer(false); $('#products').scrollIntoView({behavior:'smooth'}); }
     const add = e.target.closest('[data-add]'); if (add) { const p=state.products.find(x=>String(x.id)===add.dataset.add); if(!p)return; const item=state.cart.find(x=>String(x.id)===String(p.id)); if(item)item.qty++; else state.cart.push({id:p.id,name:p.name,price:Number(p.price)||0,qty:1}); saveCart(); toast('انضاف المنتج للسلة'); }
     const qty = e.target.closest('[data-qty]'); if(qty) { const item=state.cart.find(x=>String(x.id)===qty.dataset.qty); if(item){item.qty+=Number(qty.dataset.delta); if(item.qty<=0)state.cart=state.cart.filter(x=>x!==item);saveCart();} }
     const remove=e.target.closest('[data-remove]'); if(remove){state.cart=state.cart.filter(x=>String(x.id)!==remove.dataset.remove);saveCart();}
