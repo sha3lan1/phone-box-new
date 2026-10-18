@@ -10,7 +10,22 @@
  $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();say('#loginMessage','جارٍ تسجيل الدخول…');const {error}=await db.auth.signInWithPassword({email:$('#loginEmail').value.trim(),password:$('#loginPassword').value});say('#loginMessage',error?'تعذّر تسجيل الدخول: '+error.message:'تم تسجيل الدخول.');if(!error)await showDashboard();});
  $('#logoutButton').addEventListener('click',async()=>{await db.auth.signOut();});
  async function showDashboard(){ $('#loginPanel').classList.add('hidden');$('#dashboard').classList.remove('hidden'); await loadAll();}
- async function loadAll(){const [c,p]=await Promise.all([db.from('categories').select('*').order('sort_order'),db.from('products').select('*').order('created_at',{ascending:false})]);if(c.error||p.error){say('#formMessage','تعذّر تحميل البيانات. تحقق من صلاحيات الإدارة في Supabase.');return;}cats=c.data||[];products=p.data||[];$('#productCategory').innerHTML=cats.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');$('#adminCategories').innerHTML=cats.map(c=>'<span class="admin-category-chip">'+esc(c.name)+'</span>').join('');renderList();}
+ async function loadAll(){
+   let [c,p]=await Promise.all([db.from('categories').select('*').order('sort_order'),db.from('products').select('*').order('created_at',{ascending:false})]);
+   if(c.error||p.error){say('#formMessage','Could not load data. Check Supabase admin permissions.');return;}
+   cats=c.data||[];products=p.data||[];
+   for(const category of cats){
+     const group=categoryGroup(category.name), english=group?categoryLabels[group]:null;
+     if(english&&category.name!==english){
+       const result=await db.from('categories').update({name:english}).eq('id',category.id);
+       if(!result.error)category.name=english;
+     }
+   }
+   cats.sort((x,y)=>(x.sort_order||0)-(y.sort_order||0));
+   $('#productCategory').innerHTML=cats.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
+   $('#adminCategories').innerHTML=cats.map(c=>'<span class="admin-category-chip">'+esc(c.name)+'</span>').join('');
+   renderList();
+ }
  function renderList(){ $('#adminProductList').innerHTML=products.length?products.map(p=>'<div class="admin-product-row"><div class="admin-product-details"><strong>'+esc(p.name)+'</strong><small>'+money(p.price)+' · المخزون: '+p.stock_quantity+' · '+(p.is_active?'ظاهر':'مخفي')+'</small></div><button class="clear-button" data-edit="'+p.id+'">تعديل</button><button class="clear-button danger-button" data-delete="'+p.id+'">حذف</button></div>').join(''):'<p>لا توجد منتجات بعد. أضف أول منتج من النموذج أعلاه.</p>'; }
  function resetForm(){editing=null;$('#productForm').reset();$('#productId').value='';$('#productStock').value='0';$('#productActive').checked=true;$('#formTitle').textContent='إضافة منتج جديد';$('#saveProduct').textContent='حفظ المنتج';$('#cancelEdit').classList.add('hidden');say('#formMessage','');}
  $('#cancelEdit').addEventListener('click',resetForm);
@@ -24,44 +39,75 @@
  if(file&&editing?.image_path&&editing.image_path!==image_path)await db.storage.from('product-images').remove([editing.image_path]);resetForm();await loadAll();say('#formMessage','تم حفظ المنتج بنجاح.');
  }catch(err){say('#formMessage','لم يتم الحفظ: '+(err.message||'حدث خطأ'));}finally{button.disabled=false;}});
 
- // Bulk import for official brand product feeds; no arbitrary default category.
- const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9\\u0600-\\u06FF]+/g,' ').trim();
- function chooseProductCategory(product, categories) {
-   const key = value => textKey(value);
-   const title=key(product.title||product.name||'');
-   const type=key(product.product_type||product.category||'');
-   const tags=key(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
-   const description=key(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
-   const strong=type+' '+tags+' '+title;
-   const active=categories.filter(c=>c.is_active!==false);
-   const find=aliases=>active.find(c=>aliases.some(alias=>key(c.name)===key(alias)));
+ // Product classification by type/name/tags/description, independent of brand.
+ const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\\u0600-\\u06FF]+/g,' ').trim();
+ const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_mounts:'Car Mounts',car_chargers:'Car Chargers',adapters:'Adapters & Hubs',headphones:'Headphones',watch_accessories:'Watch Accessories',stands:'Phone Stands',memory_storage:'Memory Cards & USB Drives',cleaning:'Cleaning Kits',selfie_tripods:'Selfie Sticks & Tripods',tablet_accessories:'Tablet Accessories',ring_lights:'Ring Lights',styluses:'Styluses',audio_adapters:'Audio Adapters',wired_earphones:'Wired Earphones',other:'Other Accessories'};
+ function categoryGroup(name){
+   const n=textKey(name);
+   if(/screen protector|tempered glass|privacy glass|camera lens protector|لزقات الحمايه|حمايه الشاشه|لزقات شاشه/.test(n))return 'screen_protectors';
+   if(/airpods case|earbuds case|كفرات ايربود|كفر ايربود/.test(n))return 'airpods_cases';
+   if(/phone case|phone cover|mobile case|phone covers|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل/.test(n))return 'phone_cases';
+   if(/power bank|powerbank|باور بانك|باوربانك|بطاريات متنقله/.test(n))return 'power_banks';
+   if(/car charger|شاحن سياره|شواحن السيارات/.test(n))return 'car_chargers';
+   if(/car mount|car holder|car mounts|حوامل السيارات|هولدر سياره|حامل سياره/.test(n))return 'car_mounts';
+   if(/wireless charger|magnetic charger|magsafe charger|شاحن لاسلكي|شواحن لاسلكيه/.test(n))return 'wireless_chargers';
+   if(/charger|charging|wall charger|gan charger|شواحن|شاحن|قواعد الشحن/.test(n))return 'chargers';
+   if(/cable|cables|caple|wire|wires|كيبل|كابلات|كوابل|اسلاك|وصله شحن/.test(n))return 'cables';
+   if(/adapter|adapters|converter|dongle|usb hub|hubs|otg|محولات|محول|وصلات ومحولات|ادابتور/.test(n))return 'adapters';
+   if(/headphone|headphones|headset|over ear|هيدفون|سماعات الراس/.test(n))return 'headphones';
+   if(/earbud|airpods|earphone|wired earphones|ايربود|سماعات ابل|سماعات/.test(n))return 'earbuds';
+   if(/watch|smartwatch|apple watch|ساعات|الساعات|اكسسوارات الساعات/.test(n))return 'watch_accessories';
+   if(/selfie stick|tripod|gimbal|عصا سيلفي|ترايبود/.test(n))return 'selfie_tripods';
+   if(/ring light|رينج لايت|اضاءه دائريه/.test(n))return 'ring_lights';
+   if(/stand|stands|holder|desktop stand|phone stand|ستاند|حوامل الموبايل|حوامل/.test(n))return 'stands';
+   if(/memory card|flash drive|usb drive|flash memory|ذاكره|فلاش ميموري/.test(n))return 'memory_storage';
+   if(/cleaning|cleaner|cleaning kit|تنظيف|طقم تنظيف/.test(n))return 'cleaning';
+   if(/stylus|pen for tablet|قلم لمس|قلم ايباد/.test(n))return 'styluses';
+   if(/tablet|ipad accessories|اكسسوارات التابلت|اكسسوارات الايباد/.test(n))return 'tablet_accessories';
+   if(/audio adapter|aux adapter|aux cable|audio cable|محول صوت|وصله aux/.test(n))return 'audio_adapters';
+   if(/wired earphone|wired headset|سماعات سلكيه/.test(n))return 'wired_earphones';
+   if(/other accessories|miscellaneous|متنوع|اكسسوارات متنوعه|اخرى/.test(n))return 'other';
+   return null;
+ }
+ function detectProductGroup(product){
+   const name=textKey(product.title||product.name||''), desc=textKey(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
+   const type=textKey(product.product_type||product.category||''), tags=textKey(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
+   const primary=type+' '+tags+' '+name;
    const rules=[
-    [/car mount|car holder|dashboard mount|phone holder for car|حامل سيارة/,['حوامل السيارات','هولدر سيارة','حامل سيارة','حوامل']],
-    [/car charger|car charging|car adapter|شاحن سيارة/,['شواحن السيارات','شاحن سيارة','شواحن']],
-    [/power bank|powerbank|portable power|battery pack|باور بانك|بطارية متنقلة/,['باور بانك','باوربانك','بطاريات متنقلة']],
-    [/screen protector|tempered glass|privacy glass|camera lens protector|لزقة شاشة|حماية شاشة/,['لزقات الحماية','حماية الشاشة','لزقات','حماية']],
-    [/usb c cable|type c cable|lightning cable|data cable|charging cable|aux cable|audio cable|hdmi cable|\\bcables?\\b|\\bwires?\\b|كيبل|كابل|وصلة شحن|سلك شحن/,['الكوابل','كابلات','كوابل','الأسلاك']],
-    [/adapter|converter|dongle|otg|usb hub|card reader|memory card|flash drive|usb drive|محول|قارئ ذاكرة|فلاش ميموري/,['محولات','وصلات ومحولات','أدابتور','ذاكرة وفلاش']],
-    [/wall charger|gan charger|wireless charger|charging station|power adapter|\\bcharger\\b|\\bcharging\\b|شاحن|شواحن|قاعدة شحن/,['الشواحن','شواحن','شاحن']],
-    [/airpods case|earbuds case|airpods cover|\\bcase\\b|\\bcases\\b|phone cover|phone case|mobile case|protective case|silicone case|clear case|كفر|كفرات|جراب|حافظة موبايل/,['كفرات ايربودز','الكفرات','كفرات الموبايل','حافظات الموبايل','كفرات']],
-    [/earbuds|earphones|headphones|headsets|speaker|microphone|\\baudio\\b|\\btws\\b|سماعة|سماعات|هيدفون|مكبر صوت|airpods|wireless earbuds|true wireless|ايربودز|ايربود/,['AirPods','السماعات','سماعات','سماعات الرأس','صوتيات']],
-    [/desktop stand|desk stand|tablet stand|phone stand|selfie stick|tripod|gimbal|\\bholder\\b|\\bmount\\b|ستاند|ترايبود|عصا سيلفي/,['حوامل الموبايل','حوامل','ستاندات']],
-    [/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعة ذكية|سوار ساعة/,['الساعات','إكسسوارات الساعات']]
+    ['screen_protectors',/screen protector|tempered glass|privacy glass|camera lens protector|screen guard|glass protector|لزقه شاشه|حمايه شاشه|حمايه عدسه/],
+    ['car_chargers',/car charger|car charging adapter|شاحن سياره|شواحن السيارات/],
+    ['car_mounts',/car mount|car holder|dashboard mount|windshield mount|phone holder for car|magnetic car mount|هولدر سياره|حامل سياره/],
+    ['power_banks',/power bank|powerbank|portable power|battery pack|باور بانك|بطاريه متنقله/],
+    ['cables',/usb c cable|type c cable|lightning cable|charging cable|data cable|aux cable|audio cable|hdmi cable|ethernet cable|\\bcables?\\b|\\bcaple\\b|\\bcaples\\b|\\bcabels?\\b|\\bwires?\\b|كيبل|كابل|وصله شحن|سلك شحن/],
+    ['adapters',/adapter|converter|dongle|usb hub|card reader|otg|flash drive|memory card|\\bhub\\b|محول|محولات|قارئ ذاكره|فلاش ميموري/],
+    ['wireless_chargers',/wireless charger|magsafe charger|magnetic wireless charger|charging pad|شاحن لاسلكي|شحن لاسلكي/],
+    ['chargers',/wall charger|gan charger|power adapter|charging station|\\bcharger\\b|\\bcharging\\b|شاحن|شواحن/],
+    ['airpods_cases',/airpods case|airpods cover|earbuds case|case for airpods|كفر ايربود|كفر سماعات/],
+    ['phone_cases',/phone case|phone cover|mobile case|protective case|silicone case|clear case|shockproof case|\\bphone cases?\\b|\\bcases? for iphone\\b|كفر موبايل|كفرات موبايل|جراب موبايل|حافظه موبايل/],
+    ['selfie_tripods',/selfie stick|tripod|gimbal|عصا سيلفي|ترايبود/],
+    ['ring_lights',/ring light|selfie light|رينج لايت/],
+    ['watch_accessories',/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعه ذكيه|سوار ساعه/],
+    ['styluses',/stylus|touch pen|tablet pen|apple pencil|قلم لمس|قلم ايباد/],
+    ['tablet_accessories',/tablet case|ipad case|tablet stand|ipad accessories|اكسسوارات التابلت|اكسسوارات الايباد/],
+    ['memory_storage',/memory card|micro sd|sd card|flash drive|usb drive|pen drive|ذاكره|فلاش ميموري/],
+    ['cleaning',/cleaning kit|screen cleaner|cleaning pen|cleaning brush|cleaner kit|طقم تنظيف|ادوات تنظيف/],
+    ['stands',/desktop stand|desk stand|phone stand|tablet stand|phone holder|desktop holder|\\bstand\\b|\\bstands\\b|ستاند|حامل موبايل|حامل هاتف/],
+    ['headphones',/over ear headphones|headphones|headset|gaming headset|هيدفون|سماعات الراس/],
+    ['wired_earphones',/wired earphones|wired earbud|3 5mm earphone|earphones with wire|سماعات سلكيه/],
+    ['earbuds',/airpods|wireless earbuds|true wireless|earbuds|tws|bluetooth earphones|ايربود|سماعات لاسلكيه/],
+    ['audio_adapters',/aux adapter|audio adapter|headphone adapter|lightning to 3 5mm|usb c to 3 5mm|محول صوت|وصله aux/]
    ];
-   // Match type/tags/title first; never guess another category if a matched type lacks a matching category.
-   for(const [pattern,aliases] of rules){
-     if(!pattern.test(strong)) continue;
-     const category=find(aliases);
-     return category ? category.id : null;
-   }
-   // Description is only a secondary signal when the product title/type/tags are not informative.
-   for(const [pattern,aliases] of rules){
-     if(!pattern.test(description)) continue;
-     const category=find(aliases);
-     return category ? category.id : null;
-   }
-   const misc=find(['إكسسوارات متنوعة','متنوع','أخرى','other accessories']);
-   return misc?misc.id:null;
+   for(const [group,pattern] of rules){if(pattern.test(primary))return group;}
+   for(const [group,pattern] of rules){if(pattern.test(desc))return group;}
+   return null;
+ }
+ function chooseProductCategory(product,categories){
+   const group=detectProductGroup(product);if(!group)return null;
+   const found=categories.find(c=>categoryGroup(c.name)===group);if(found)return found.id;
+   if(group==='airpods_cases')return categories.find(c=>categoryGroup(c.name)==='phone_cases')?.id||null;
+   if(group==='wired_earphones')return categories.find(c=>categoryGroup(c.name)==='earbuds')?.id||null;
+   if(group==='audio_adapters')return categories.find(c=>categoryGroup(c.name)==='adapters')?.id||null;
+   return null;
  }
  async function importBrand(brand, urls, button) {
    if(!db||!button)return;
@@ -108,28 +154,25 @@
  $('#importWiwu')?.addEventListener('click',()=>importBrand('WiWU',['https://www.wiwu.com/products.json?limit=250','https://www.wiwu.com/collections/all/products.json?limit=250'],$('#importWiwu')));
  $('#importAnker')?.addEventListener('click',()=>importBrand('Anker',['https://www.anker.com/products.json?limit=250','https://us.anker.com/products.json?limit=250','https://us.anker.com/collections/all/products.json?limit=250'],$('#importAnker')));
 
- const fixCatsButton=$('#fixJoyroomCategories');
+ const fixCatsButton=$('#fixAllCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
-   if(!confirm('سيتم فحص منتجات JOYROOM وWiWU وAnker. لن نغيّر منتجًا إذا لم يتضح تصنيفه. متابعة؟'))return;
-   fixCatsButton.disabled=true;say('#importMessage','جارٍ مراجعة تصنيفات المنتجات…');
+   if(!confirm('Reclassify ALL products from every brand using product names and descriptions? Products with no clear match will be removed from the incorrect category instead of being placed in Phone Cases. Continue?'))return;
+   fixCatsButton.disabled=true;say('#importMessage','Reviewing product descriptions and categories…');
    try{
-     const [cr,pr]=await Promise.all([
-       db.from('categories').select('*').eq('is_active',true),
-       db.from('products').select('id,name,brand,description,category_id').in('brand',['JOYROOM','WiWU','Anker'])
-     ]);
+     const [cr,pr]=await Promise.all([db.from('categories').select('*').eq('is_active',true),db.from('products').select('id,name,brand,description,category_id,product_type,tags')]);
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
-     let updated=0,unclear=0;
+     let moved=0,cleared=0,unchanged=0;
      for(const p of pr.data||[]){
-       const category_id=chooseProductCategory({title:p.name,body_html:p.description},cr.data||[]);
-       if(!category_id){unclear++;continue;}
-       if(String(category_id)===String(p.category_id))continue;
-       const result=await db.from('products').update({category_id}).eq('id',p.id);
-       if(result.error)throw result.error;
-       updated++;
+       const category_id=chooseProductCategory({title:p.name,description:p.description,product_type:p.product_type,tags:p.tags},cr.data||[]);
+       const next=category_id||null;
+       if(String(next||'')===String(p.category_id||'')){unchanged++;continue;}
+       const result=await db.from('products').update({category_id:next}).eq('id',p.id);
+       if(result.error)throw new Error('Stopped after '+moved+' changes: '+result.error.message);
+       if(next)moved++;else cleared++;
      }
      await loadAll();
-     say('#importMessage','انتهى الفحص: تم تصحيح '+updated+' منتجًا، وترك '+unclear+' منتجًا دون تغيير لعدم وضوح التصنيف.');
-   }catch(err){say('#importMessage','تعذّر التصحيح: '+(err.message||'خطأ غير معروف'));}
+     say('#importMessage','Finished. Correctly classified/moved: '+moved+'. Removed from an incorrect category because the type was unclear: '+cleared+'. Already matched: '+unchanged+'.');
+   }catch(err){say('#importMessage','Could not finish reclassification: '+(err.message||'Unknown error'));}
    finally{fixCatsButton.disabled=false;}
  });
 
