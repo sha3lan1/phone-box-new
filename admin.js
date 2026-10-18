@@ -228,18 +228,33 @@
      }
      for(const [group,list] of groups){
        const canonicalName=categoryLabels[group]||'Needs Review';
-       let primary=list.find(c=>c.name===canonicalName)||list.find(c=>c.is_active!==false)||list[0];
-       if(primary.name!==canonicalName){
-         const renamed=await db.from('categories').update({name:canonicalName}).eq('id',primary.id);
-         if(renamed.error)throw new Error('Could not rename category '+primary.name+': '+renamed.error.message);
-         primary.name=canonicalName;
-       }
+       // Resolve the unique-name constraint before renaming anything.
+       const canonicalLookup=await db.from('categories').select('*').eq('name',canonicalName).maybeSingle();
+       if(canonicalLookup.error)throw new Error('Could not check category '+canonicalName+': '+canonicalLookup.error.message);
+       let primary=canonicalLookup.data||list.find(c=>c.is_active!==false)||list[0];
+       // Merge every equivalent row into the canonical row; never rename into a name that already exists.
        for(const duplicate of list){
          if(String(duplicate.id)===String(primary.id))continue;
          const move=await db.from('products').update({category_id:primary.id}).eq('category_id',duplicate.id);
-         if(move.error)throw new Error('Could not merge duplicate category '+duplicate.name+': '+move.error.message);
+         if(move.error)throw new Error('Could not merge category '+duplicate.name+': '+move.error.message);
          const deactivate=await db.from('categories').update({is_active:false}).eq('id',duplicate.id);
          if(deactivate.error)throw new Error('Could not deactivate duplicate category '+duplicate.name+': '+deactivate.error.message);
+       }
+       if(primary.name!==canonicalName){
+         // Only rename when the canonical name is still unused.
+         const nameCheck=await db.from('categories').select('id').eq('name',canonicalName).maybeSingle();
+         if(nameCheck.error)throw new Error('Could not verify category name '+canonicalName+': '+nameCheck.error.message);
+         if(!nameCheck.data){
+           const renamed=await db.from('categories').update({name:canonicalName}).eq('id',primary.id);
+           if(renamed.error)throw new Error('Could not rename category '+primary.name+': '+renamed.error.message);
+           primary.name=canonicalName;
+         }else{
+           const move=await db.from('products').update({category_id:nameCheck.data.id}).eq('category_id',primary.id);
+           if(move.error)throw new Error('Could not merge into existing category '+canonicalName+': '+move.error.message);
+           const deactivate=await db.from('categories').update({is_active:false}).eq('id',primary.id);
+           if(deactivate.error)throw new Error('Could not deactivate merged category '+primary.name+': '+deactivate.error.message);
+           primary={...primary,id:nameCheck.data.id,name:canonicalName};
+         }
        }
      }
      // Keep unrelated Arabic/unknown category labels out of the public English UI.
