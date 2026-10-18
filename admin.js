@@ -91,12 +91,8 @@
  });
 
 
- const fixCatsButton=document.createElement('button');
- fixCatsButton.type='button'; fixCatsButton.id='fixJoyroomCategories'; fixCatsButton.className='button button-dark';
- fixCatsButton.textContent='إصلاح تصنيفات منتجات JOYROOM';
- const importButton=$('#importJoyroom');
- if(importButton && !$('#fixJoyroomCategories')) importButton.parentElement.appendChild(fixCatsButton);
- fixCatsButton.addEventListener('click',async()=>{
+ const fixCatsButton=$('#fixJoyroomCategories');
+ if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
    if(!confirm('سيتم إعادة تصنيف منتجات JOYROOM الموجودة فقط حسب اسم المنتج ووصفه. المنتجات غير الواضحة ستُنقل إلى إكسسوارات متنوعة إن وُجد هذا التصنيف. متابعة؟'))return;
    fixCatsButton.disabled=true;say('#importMessage','جارٍ فحص أسماء المنتجات والتصنيفات…');
    try{
