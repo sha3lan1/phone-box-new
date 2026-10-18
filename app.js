@@ -11,7 +11,7 @@
     const n=String(name||'').toLowerCase().replace(/[إأآ]/g,'ا').replace(/ة/g,'ه');
     if(/screen protector|tempered glass|لزقات الحمايه|حمايه الشاشه/.test(n))return 'Screen Protectors';
     if(/airpods case|earbuds case|كفرات ايربود/.test(n))return 'AirPods Cases';
-    if(/phone case|phone cover|كفرات الموبايل|حافظات الموبايل|كفر الموبايل/.test(n))return 'Phone Cases';
+    if(/phone case|phone cover|كفرات الموبايل|حافظات الموبايل|كفر الموبايل|كفرات ايفون|كفرات ابل|كفرات سامسونج|كفرات/.test(n))return 'Phone Cases';
     if(/power bank|powerbank|باور بانك|باوربانك/.test(n))return 'Power Banks';
     if(/car charger|شاحن سياره|شواحن السيارات/.test(n))return 'Car Chargers';
     if(/car mount|car holder|حوامل السيارات|هولدر سياره|حامل سياره/.test(n))return 'Car Mounts';
