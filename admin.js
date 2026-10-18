@@ -14,13 +14,6 @@
    let [c,p]=await Promise.all([db.from('categories').select('*').order('sort_order'),db.from('products').select('*').order('created_at',{ascending:false})]);
    if(c.error||p.error){say('#formMessage','Could not load data. Check Supabase admin permissions.');return;}
    cats=c.data||[];products=p.data||[];
-   for(const category of cats){
-     const group=categoryGroup(category.name), english=group?categoryLabels[group]:null;
-     if(english&&category.name!==english){
-       const result=await db.from('categories').update({name:english}).eq('id',category.id);
-       if(!result.error)category.name=english;
-     }
-   }
    cats.sort((x,y)=>(x.sort_order||0)-(y.sort_order||0));
    $('#productCategory').innerHTML=cats.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
    $('#adminCategories').innerHTML=cats.map(c=>'<span class="admin-category-chip">'+esc(c.name)+'</span>').join('');
@@ -41,73 +34,64 @@
 
  // Product classification by type/name/tags/description, independent of brand.
  const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
- const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_mounts:'Car Mounts',car_chargers:'Car Chargers',adapters:'Adapters & Hubs',headphones:'Headphones',watch_accessories:'Watch Accessories',stands:'Phone Stands',memory_storage:'Memory Cards & USB Drives',cleaning:'Cleaning Kits',selfie_tripods:'Selfie Sticks & Tripods',tablet_accessories:'Tablet Accessories',ring_lights:'Ring Lights',styluses:'Styluses',audio_adapters:'Audio Adapters',wired_earphones:'Wired Earphones',other:'Other Accessories',needs_review:'Needs Review'};
+ const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_accessories:'Car Accessories',usb_accessories:'USB Adapters & Accessories',audio_wired:'Wired Earphones & Headphones',watch_accessories:'Smart Watches & Accessories',phone_holders_tripods:'Phone Holders & Tripods',memory_storage:'Memory Cards & USB Drives',phone_care:'Cleaning & Phone Care',tablet_accessories:'Tablet Accessories & Stylus Pens',lighting:'Lighting & Ring Lights',other:'Other Accessories',needs_review:'Needs Review',audio:'Audio & Sound'};
  function categoryGroup(name){
    const n=textKey(name);
-   if(/screen protector|tempered glass|privacy glass|camera lens protector|لزقات الحمايه|حمايه الشاشه|لزقات شاشه/.test(n))return 'screen_protectors';
-   if(/airpods case|earbuds case|كفرات ايربود|كفر ايربود/.test(n))return 'airpods_cases';
-   if(/phone case|phone cover|mobile case|phone covers|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات ابل|كفرات سامسونج|^كفرات$|^الكفرات$|^كفر$/.test(n))return 'phone_cases';
-   if(/power bank|powerbank|باور بانك|باوربانك|بطاريات متنقله/.test(n))return 'power_banks';
-   if(/car charger|شاحن سياره|شواحن السيارات/.test(n))return 'car_chargers';
-   if(/car mount|car holder|car mounts|حوامل السيارات|هولدر سياره|حامل سياره/.test(n))return 'car_mounts';
-   if(/wireless charger|magnetic charger|magsafe charger|شاحن لاسلكي|شواحن لاسلكيه/.test(n))return 'wireless_chargers';
-   if(/charger|charging|wall charger|gan charger|شواحن|شاحن|قواعد الشحن/.test(n))return 'chargers';
-   if(/cable|cables|caple|wire|wires|كيبل|كابلات|كوابل|اسلاك|وصله شحن/.test(n))return 'cables';
-   if(/adapter|adapters|converter|dongle|usb hub|hubs|otg|محولات|محول|وصلات ومحولات|ادابتور/.test(n))return 'adapters';
-   if(/headphone|headphones|headset|over ear|هيدفون|سماعات الراس/.test(n))return 'headphones';
-   if(/earbud|airpods|earphone|wired earphones|ايربود|سماعات ابل|سماعات/.test(n))return 'earbuds';
-   if(/watch|smartwatch|apple watch|ساعات|الساعات|اكسسوارات الساعات/.test(n))return 'watch_accessories';
-   if(/selfie stick|tripod|gimbal|عصا سيلفي|ترايبود/.test(n))return 'selfie_tripods';
-   if(/ring light|رينج لايت|اضاءه دائريه/.test(n))return 'ring_lights';
-   if(/stand|stands|holder|desktop stand|phone stand|ستاند|حوامل الموبايل|حوامل/.test(n))return 'stands';
-   if(/memory card|flash drive|usb drive|flash memory|ذاكره|فلاش ميموري/.test(n))return 'memory_storage';
-   if(/cleaning|cleaner|cleaning kit|تنظيف|طقم تنظيف/.test(n))return 'cleaning';
-   if(/stylus|pen for tablet|قلم لمس|قلم ايباد/.test(n))return 'styluses';
-   if(/tablet|ipad accessories|اكسسوارات التابلت|اكسسوارات الايباد/.test(n))return 'tablet_accessories';
-   if(/audio adapter|aux adapter|aux cable|audio cable|محول صوت|وصله aux/.test(n))return 'audio_adapters';
-   if(/wired earphone|wired headset|سماعات سلكيه/.test(n))return 'wired_earphones';
    if(/needs review|غير مصنف|بحاجه لمراجعه/.test(n))return 'needs_review';
-   if(/other accessories|miscellaneous|متنوع|اكسسوارات متنوعه|اخرى/.test(n))return 'other';
+   if(/screen protector|tempered glass|privacy glass|camera lens protector|screen guard|لزقات الحمايه|حمايه الشاشه|لزقات شاشه|حمايه عدسه/.test(n))return 'screen_protectors';
+   if(/airpods case|earbuds case|case for airpods|كفرات ايربود|كفر ايربود|كفر سماعات/.test(n))return 'airpods_cases';
+   if(/phone case|phone cover|mobile case|phone covers|iphone case|كفرات الموبايل|كفر الموبايل|حافظات الموبايل|جرابات الموبايل|كفرات ايفون|كفرات ابل|كفرات سامسونج|^كفرات$|^الكفرات$|^كفر$/.test(n))return 'phone_cases';
+   if(/power bank|powerbank|portable power|باور بانك|باوربانك|بطاريات متنقله/.test(n))return 'power_banks';
+   if(/car charger|car mount|car holder|car accessories|automobile|car phone|dashboard mount|phone mounts|هولدر سياره|حامل سياره|حوامل السيارات|اكسسوارات السياره|شاحن سياره|شواحن السيارات|مرسل fm|اف ام/.test(n))return 'car_accessories';
+   if(/wireless charger|magnetic charger|magsafe charger|شاحن لاسلكي|شواحن لاسلكيه/.test(n))return 'wireless_chargers';
+   if(/charger|charging|wall charger|gan charger|power adapter|رؤوس الشحن|راس شحن|شواحن|شاحن|قواعد الشحن|شاحن حائط/.test(n))return 'chargers';
+   if(/cable|cables|caple|cabel|wire|wires|charging cable|data cable|usb cable|كيبل|كابل|كوابل|كابلات|اسلاك|كيابل|وصله شحن/.test(n))return 'cables';
+   if(/adapter|adapters|converter|dongle|usb hub|usb accessories|hubs and docks|otg|محولات|محول|وصلات ومحولات|ادابتور|ملحقات usb|ملحقات يو اس بي|يو اس بي/.test(n))return 'usb_accessories';
+   if(/wired earphone|wired headset|wired headphones|headphone|headphones|headset|over ear|هيدفون|سماعات سلكيه|سماعات الراس|سماعات سلكية/.test(n))return 'audio_wired';
+   if(/earbud|airpods|wireless earphone|wireless earbuds|earphones|ايربود|سماعات ابل|سماعات لاسلكيه|سماعات بلوتوث/.test(n))return 'earbuds';
+   if(/watch|smartwatch|apple watch|watch band|watch strap|watch charger|ساعات ذكيه|ساعات|الساعات|اكسسوارات الساعات|احزمه الساعات|شاحن ساعه/.test(n))return 'watch_accessories';
+   if(/selfie stick|tripod|gimbal|phone holder|phone stand|holders|stands|desktop stand|phone ring holder|عصا سيلفي|ترايبود|ستاند|حوامل الموبايل|حوامل الهاتف|حامل موبايل|حامل هاتف|حوامل/.test(n))return 'phone_holders_tripods';
+   if(/ring light|lighting|light accessories|رينج لايت|اضاءه دائريه|اضاءه/.test(n))return 'lighting';
+   if(/memory card|flash drive|usb drive|flash memory|storage and data transfer|ذاكره|فلاش ميموري/.test(n))return 'memory_storage';
+   if(/cleaning|cleaner|cleaning kit|phone care|phone protection|تنظيف|طقم تنظيف|حمايه الموبايل|حمايه الهاتف/.test(n))return 'phone_care';
+   if(/stylus|tablet|ipad|macbook accessories|tablet accessories|قلم لمس|قلم ايباد|اكسسوارات التابلت|اكسسوارات الايباد|ملحقات التابلت/.test(n))return 'tablet_accessories';
+   if(/audio|sound|speaker|microphone|audio accessories|سماعات|صوت|سبيكر|مكبر صوت|مايكروفون/.test(n))return 'audio';
+   if(/other accessories|miscellaneous|متنوع|اكسسوارات متنوعه|اخرى|ملحقات اخرى/.test(n))return 'other';
    return null;
  }
  function detectProductGroup(product){
    const name=textKey(product.title||product.name||''), desc=textKey(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
    const type=textKey(product.product_type||product.category||''), tags=textKey(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
-   const primary=type+' '+tags+' '+name;
+   const primary=type+' '+tags+' '+name, full=primary+' '+desc;
    const rules=[
-    ['screen_protectors',/screen protector|tempered glass|privacy glass|camera lens protector|screen guard|glass protector|لزقه شاشه|حمايه شاشه|حمايه عدسه/],
-    ['car_chargers',/car charger|car charging adapter|شاحن سياره|شواحن السيارات/],
-    ['car_mounts',/car mount|car holder|dashboard mount|windshield mount|phone holder for car|magnetic car mount|هولدر سياره|حامل سياره/],
+    ['screen_protectors',/screen protector|tempered glass|privacy glass|camera lens protector|screen guard|glass protector|لزقه شاشه|لزقات الحمايه|حمايه شاشه|حمايه عدسه/],
+    ['airpods_cases',/airpods case|airpods cover|earbuds case|case for airpods|كفر ايربود|كفر سماعات/],
+    ['car_accessories',/car charger|car mount|car holder|car phone holder|dashboard mount|windshield mount|car fm transmitter|fm transmitter|automobile accessories|هولدر سياره|حامل سياره|شاحن سياره|مرسل اف ام|اكسسوارات السياره/],
     ['power_banks',/power bank|powerbank|portable power|battery pack|باور بانك|بطاريه متنقله/],
     ['cables',/usb c cable|type c cable|lightning cable|charging cable|data cable|aux cable|audio cable|hdmi cable|ethernet cable|\bcables?\b|\bcaple\b|\bcaples\b|\bcabels?\b|\bwires?\b|كيبل|كابل|وصله شحن|سلك شحن/],
-    ['adapters',/adapter|converter|dongle|usb hub|card reader|otg|flash drive|memory card|\bhub\b|محول|محولات|قارئ ذاكره|فلاش ميموري/],
+    ['usb_accessories',/adapter|converter|dongle|usb hub|card reader|otg|flash drive|memory card|\bhub\b|محول|محولات|قارئ ذاكره|فلاش ميموري|ملحقات usb/],
     ['wireless_chargers',/wireless charger|magsafe charger|magnetic wireless charger|charging pad|شاحن لاسلكي|شحن لاسلكي/],
-    ['chargers',/wall charger|gan charger|power adapter|charging station|\bcharger\b|\bcharging\b|شاحن|شواحن/],
-    ['airpods_cases',/airpods case|airpods cover|earbuds case|case for airpods|كفر ايربود|كفر سماعات/],
+    ['chargers',/wall charger|gan charger|power adapter|charging station|\bcharger\b|\bcharging\b|رؤوس الشحن|شاحن|شواحن/],
     ['phone_cases',/phone case|phone cover|mobile case|protective case|silicone case|clear case|shockproof case|\bphone cases?\b|\bcases? for iphone\b|كفر موبايل|كفرات موبايل|جراب موبايل|حافظه موبايل/],
-    ['selfie_tripods',/selfie stick|tripod|gimbal|عصا سيلفي|ترايبود/],
-    ['ring_lights',/ring light|selfie light|رينج لايت/],
+    ['phone_holders_tripods',/selfie stick|tripod|gimbal|phone holder|phone stand|desktop stand|phone ring holder|عصا سيلفي|ترايبود|ستاند|حامل موبايل|حامل هاتف/],
+    ['lighting',/ring light|selfie light|lighting|رينج لايت|اضاءه/],
     ['watch_accessories',/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعه ذكيه|سوار ساعه/],
-    ['styluses',/stylus|touch pen|tablet pen|apple pencil|قلم لمس|قلم ايباد/],
-    ['tablet_accessories',/tablet case|ipad case|tablet stand|ipad accessories|اكسسوارات التابلت|اكسسوارات الايباد/],
+    ['tablet_accessories',/stylus|touch pen|tablet pen|apple pencil|tablet case|ipad case|tablet stand|ipad accessories|قلم لمس|قلم ايباد|اكسسوارات التابلت/],
     ['memory_storage',/memory card|micro sd|sd card|flash drive|usb drive|pen drive|ذاكره|فلاش ميموري/],
-    ['cleaning',/cleaning kit|screen cleaner|cleaning pen|cleaning brush|cleaner kit|طقم تنظيف|ادوات تنظيف/],
-    ['stands',/desktop stand|desk stand|phone stand|tablet stand|phone holder|desktop holder|\bstand\b|\bstands\b|ستاند|حامل موبايل|حامل هاتف/],
-    ['headphones',/over ear headphones|headphones|headset|gaming headset|هيدفون|سماعات الراس/],
-    ['wired_earphones',/wired earphones|wired earbud|3 5mm earphone|earphones with wire|سماعات سلكيه/],
-    ['earbuds',/airpods|wireless earbuds|true wireless|earbuds|tws|bluetooth earphones|ايربود|سماعات لاسلكيه/],
-    ['audio_adapters',/aux adapter|audio adapter|headphone adapter|lightning to 3 5mm|usb c to 3 5mm|محول صوت|وصله aux/]
+    ['phone_care',/cleaning kit|screen cleaner|cleaning pen|cleaning brush|cleaner kit|طقم تنظيف|ادوات تنظيف/],
+    ['audio_wired',/wired earphones|wired earbud|wired headset|wired headphones|over ear headphones|headphones|headset|3 5mm earphone|earphones with wire|سماعات سلكيه|سماعات سلكية|هيدفون/],
+    ['earbuds',/airpods|wireless earbuds|true wireless|earbuds|tws|bluetooth earphones|open ear headphones|ايربود|سماعات لاسلكيه/],
+    ['audio',/bluetooth speaker|speaker|microphone|audio|sound|مكبر صوت|سبيكر|مايكروفون/]
    ];
    for(const [group,pattern] of rules){if(pattern.test(primary))return group;}
-   for(const [group,pattern] of rules){if(pattern.test(desc))return group;}
+   for(const [group,pattern] of rules){if(pattern.test(full))return group;}
+   if(/\p{Script=Arabic}/u.test(String(product.title||product.name||'')))return 'needs_review';
    return null;
  }
  function chooseProductCategory(product,categories){
    const group=detectProductGroup(product);if(!group)return null;
    const found=categories.find(c=>categoryGroup(c.name)===group);if(found)return found.id;
    if(group==='airpods_cases')return categories.find(c=>categoryGroup(c.name)==='phone_cases')?.id||null;
-   if(group==='wired_earphones')return categories.find(c=>categoryGroup(c.name)==='earbuds')?.id||null;
-   if(group==='audio_adapters')return categories.find(c=>categoryGroup(c.name)==='adapters')?.id||null;
    return null;
  }
  async function importBrand(brand, urls, button, options={}) {
@@ -187,34 +171,80 @@
  }
  const fixCatsButton=$('#fixAllCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
-   if(!confirm('Analyze every product from all brands. Products will be moved by their names/descriptions, and missing categories will be created in English. Products with insufficient information will go to Needs Review. Continue?'))return;
-   fixCatsButton.disabled=true;say('#importMessage','Analyzing product names and descriptions…');
+   if(!confirm('Normalize all category names to English, merge duplicate categories shared by brands, and classify all products by their names and descriptions? Unknown products will go to Needs Review. Continue?'))return;
+   fixCatsButton.disabled=true;say('#importMessage','Analyzing products and merging matching categories…');
    try{
-     const [cr,pr]=await Promise.all([db.from('categories').select('*').eq('is_active',true),db.from('products').select('id,name,brand,description,category_id')]);
+     const [cr,pr]=await Promise.all([db.from('categories').select('*'),db.from('products').select('id,name,brand,description,category_id')]);
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
-     let categories=cr.data||[],moved=0,created=0,review=0,unchanged=0;
-     for(const p of pr.data||[]){
-       const group=detectProductGroup({title:p.name,description:p.description});
-       let categoryId;
-       if(group){
-         const before=categories.length;
-         categoryId=await ensureCategory(group,categories);
-         if(categories.length>before)created++;
-       }else{
-         const before=categories.length;
-         categoryId=await ensureCategory('needs_review',categories);
-         if(categories.length>before)created++;
-         review++;
+     let categories=cr.data||[], products=pr.data||[], moved=0,created=0,review=0;
+     const ensure=async(group)=>{
+       let matching=categories.filter(c=>categoryGroup(c.name)===group);
+       if(matching.length)return matching[0].id;
+       const label=categoryLabels[group]||'Needs Review';
+       const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
+       const slug=label.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+       const result=await db.from('categories').insert({name:label,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
+       if(result.error){
+         const retry=await db.from('categories').select('*').eq('name',label).maybeSingle();
+         if(retry.error||!retry.data)throw new Error('Could not create '+label+': '+result.error.message);
+         categories.push(retry.data);return retry.data.id;
        }
-       if(String(categoryId)===String(p.category_id||'')){unchanged++;continue;}
-       const result=await db.from('products').update({category_id:categoryId}).eq('id',p.id);
+       categories.push(result.data);created++;return result.data.id;
+     };
+     for(const p of products){
+       const group=detectProductGroup({title:p.name,description:p.description});
+       if(!group){review++;continue;}
+       const id=await ensure(group);
+       if(String(id)===String(p.category_id||''))continue;
+       const result=await db.from('products').update({category_id:id}).eq('id',p.id);
        if(result.error)throw new Error('Stopped after '+moved+' product updates: '+result.error.message);
        moved++;
        if(moved%20===0)say('#importMessage','Classified '+moved+' products…');
      }
+     // Merge all duplicate category records into one canonical English category per recognized group.
+     const fresh=await db.from('categories').select('*');
+     if(fresh.error)throw fresh.error;
+     categories=fresh.data||[];
+     const groups=new Map();
+     for(const c of categories){
+       const group=categoryGroup(c.name);
+       if(!group)continue;
+       if(!groups.has(group))groups.set(group,[]);
+       groups.get(group).push(c);
+     }
+     for(const [group,list] of groups){
+       const canonicalName=categoryLabels[group]||'Needs Review';
+       let primary=list.find(c=>c.name===canonicalName)||list.find(c=>c.is_active!==false)||list[0];
+       if(primary.name!==canonicalName){
+         const renamed=await db.from('categories').update({name:canonicalName}).eq('id',primary.id);
+         if(renamed.error)throw new Error('Could not rename category '+primary.name+': '+renamed.error.message);
+         primary.name=canonicalName;
+       }
+       for(const duplicate of list){
+         if(String(duplicate.id)===String(primary.id))continue;
+         const move=await db.from('products').update({category_id:primary.id}).eq('category_id',duplicate.id);
+         if(move.error)throw new Error('Could not merge duplicate category '+duplicate.name+': '+move.error.message);
+         const deactivate=await db.from('categories').update({is_active:false}).eq('id',duplicate.id);
+         if(deactivate.error)throw new Error('Could not deactivate duplicate category '+duplicate.name+': '+deactivate.error.message);
+       }
+     }
+     // Keep unrelated Arabic/unknown category labels out of the public English UI.
+     const finalCats=await db.from('categories').select('*');
+     if(finalCats.error)throw finalCats.error;
+     for(const c of finalCats.data||[]){
+       if(c.is_active===false)continue;
+       if(!categoryGroup(c.name)){
+         const name=String(c.name||'');
+         if(/\p{Script=Arabic}/u.test(name)){
+           const reviewId=await ensure('needs_review');
+           await db.from('products').update({category_id:reviewId}).eq('category_id',c.id);
+           await db.from('categories').update({is_active:false}).eq('id',c.id);
+         }
+       }
+     }
      await loadAll();
-     say('#importMessage','Done. Products moved: '+moved+'. New categories created: '+created+'. Products needing review: '+review+'. Already correct: '+unchanged+'.');
-   }catch(err){say('#importMessage','Could not complete classification: '+(err.message||'Unknown error'));}
+     say('#importMessage','Finished. Products reclassified: '+moved+'. New categories: '+created+'. Products needing manual review: '+review+'. Duplicate categories were merged and active category names standardized in English.');
+   }catch(err){say('#importMessage','Could not finish safely: '+(err.message||'Unknown error')+'. Please send this exact message before retrying.');}
    finally{fixCatsButton.disabled=false;}
  });
 
