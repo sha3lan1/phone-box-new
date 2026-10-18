@@ -110,9 +110,9 @@
    if(group==='audio_adapters')return categories.find(c=>categoryGroup(c.name)==='adapters')?.id||null;
    return null;
  }
- async function importBrand(brand, urls, button) {
-   if(!db||!button)return;
-   if(!confirm('سيتم جلب المنتجات التي يتيحها '+brand+' للعامة مع صورها. لن تظهر الأسعار للزبائن. متابعة؟'))return;
+ async function importBrand(brand, urls, button, options={}) {
+   if(!db||!button)return false;
+   if(!options.silent&&!confirm('سيتم جلب المنتجات المتاحة للعامة من '+brand+' مع صورها. متابعة؟'))return false;
    button.disabled=true;say('#importMessage','جارٍ جلب منتجات '+brand+'…');
    try{
      let products=null,lastError=null;
@@ -136,7 +136,7 @@
        const body=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim(); const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||''); const description=body.slice(0,600);
        rows.push({name,brand,category_id:chooseProductCategory({...p,title:name,body_html:description},catRes.data||[]),price:0,stock_quantity:0,description,image_url:image,is_featured:false,is_active:true});
      }
-     if(!rows.length){say('#importMessage','لا توجد منتجات جديدة من '+brand+'.');return;}
+     if(!rows.length){say('#importMessage','No new products found for '+brand+'.');return true;}
      let count=0,uncategorized=0;
      for(let i=0;i<rows.length;i+=15){
        const batch=rows.slice(i,i+15);
@@ -147,13 +147,29 @@
        say('#importMessage','تمت إضافة '+count+' من '+rows.length+' منتج…');
      }
      await loadAll();
-     say('#importMessage','اكتمل استيراد '+brand+': '+count+' منتج. منتجات بلا تصنيف واضح: '+uncategorized+'؛ تُركت دون تصنيف تخميني.');
-   }catch(err){say('#importMessage','تعذّر استيراد '+brand+': '+(err.message||'خطأ غير معروف'));}
-   finally{button.disabled=false;}
+     say('#importMessage','Imported '+count+' new products from '+brand+'. Products needing review: '+uncategorized+'.');
+     return true;
+   }catch(err){say('#importMessage','Could not import '+brand+': '+(err.message||'Unknown error'));return false;}
+   finally{if(!options.keepDisabled)button.disabled=false;}
  }
- $('#importJoyroom')?.addEventListener('click',()=>importBrand('JOYROOM',['https://www.joyroom.com/products.json?limit=250','https://www.joyroom.com/collections/all/products.json?limit=250'],$('#importJoyroom')));
- $('#importWiwu')?.addEventListener('click',()=>importBrand('WiWU',['https://www.wiwu.com/products.json?limit=250','https://www.wiwu.com/collections/all/products.json?limit=250'],$('#importWiwu')));
- $('#importAnker')?.addEventListener('click',()=>importBrand('Anker',['https://www.anker.com/products.json?limit=250','https://us.anker.com/products.json?limit=250','https://us.anker.com/collections/all/products.json?limit=250'],$('#importAnker')));
+ const syncCatalogsButton=$('#syncAllCatalogs');
+ if(syncCatalogsButton)syncCatalogsButton.addEventListener('click',async()=>{
+   if(!confirm('Try syncing all publicly available products from JOYROOM, WiWU and Anker? Continue?'))return;
+   syncCatalogsButton.disabled=true;
+   const feeds=[
+     ['JOYROOM',['https://www.joyroom.com/products.json?limit=250','https://www.joyroom.com/collections/all/products.json?limit=250']],
+     ['WiWU',['https://www.wiwu.com/products.json?limit=250','https://www.wiwu.com/collections/all/products.json?limit=250']],
+     ['Anker',['https://www.anker.com/products.json?limit=250','https://us.anker.com/products.json?limit=250','https://us.anker.com/collections/all/products.json?limit=250']]
+   ];
+   let success=0;
+   for(const [brand,urls] of feeds){
+     const ok=await importBrand(brand,urls,syncCatalogsButton,{silent:true,keepDisabled:true});
+     if(ok)success++;
+   }
+   syncCatalogsButton.disabled=false;
+   if(success===3)say('#importMessage','All three public catalog feeds responded. This does not guarantee each supplier exposes its entire catalog through the public feed; review the product count before considering the catalog complete.');
+   else say('#importMessage','Only '+success+' of 3 catalog feeds responded successfully. Check the message above before assuming imports are complete.');
+ });
 
  async function ensureCategory(group, categories){
    const name=categoryLabels[group]||'Needs Review';
