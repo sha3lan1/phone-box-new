@@ -10,8 +10,32 @@
   const categoryName = (id) => state.categories.find(c => String(c.id) === String(id))?.name || 'إكسسوارات متنوعة';
   function renderCategories() {
     const grid = $('#categoryGrid'), filter = $('#categoryFilter');
-    if (grid) grid.innerHTML = state.categories.length ? state.categories.filter(c => c.is_active !== false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).map(c => '<button class="category-card '+(String(state.category)===String(c.id)?'selected':'')+'" data-category="'+escapeHtml(c.id)+'"><span class="category-symbol">✦</span><strong>'+escapeHtml(c.name)+'</strong><small>استكشف المنتجات ←</small></button>').join('') : '<div class="loading-state">لا توجد تصنيفات متاحة حاليًا.</div>';
-    if (filter) { const current = filter.value; filter.innerHTML = '<option value="">كل التصنيفات</option>' + state.categories.filter(c => c.is_active !== false).map(c => '<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name)+'</option>').join(''); filter.value = current || state.category || ''; }
+    const active = state.categories.filter(c => c.is_active !== false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    const norm = v => String(v||'').toLowerCase().replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
+    const mainRules = [
+      {key:'chargers', terms:['شواحن','شاحن','charger','charging'], label:'الشواحن'},
+      {key:'airpods', terms:['ايربود','airpods','air pods','سماعات ابل'], label:'AirPods'},
+      {key:'powerbank', terms:['باور بانك','باوربانك','power bank','powerbank'], label:'باور بانك'},
+      {key:'cases', terms:['كفرات','كفر','cases','phone case','حافظات الموبايل'], label:'الكفرات'}
+    ];
+    const main = [];
+    const used = new Set();
+    for (const rule of mainRules) {
+      let found = active.find(c => !used.has(String(c.id)) && rule.terms.some(t => norm(c.name).includes(norm(t))));
+      if (!found && rule.key==='airpods') found = active.find(c => !used.has(String(c.id)) && /سماعات|سماعه|earbuds|headphones/.test(norm(c.name)));
+      if (found) { main.push({...found, _displayLabel:rule.label}); used.add(String(found.id)); }
+    }
+    if (grid) {
+      grid.innerHTML = main.length ? main.map(c => '<button class="category-card '+(String(state.category)===String(c.id)?'selected':'')+'" data-category="'+escapeHtml(c.id)+'"><span class="category-symbol">'+(c._displayLabel==='الشواحن'?'ϟ':c._displayLabel==='AirPods'?'◉':c._displayLabel==='باور بانك'?'▰':'◇')+'</span><strong>'+escapeHtml(c._displayLabel)+'</strong><small>استكشف المنتجات ←</small></button>').join('') : '<div class="loading-state">التصنيفات الرئيسية قيد التجهيز.</div>';
+    }
+    const other = active.filter(c => !used.has(String(c.id)));
+    const otherLinks = $('#otherCategoryLinks');
+    if (otherLinks) otherLinks.innerHTML = other.length ? other.map(c=>'<button type="button" class="drawer-category-link" data-category="'+escapeHtml(c.id)+'">'+escapeHtml(c.name)+' <span>←</span></button>').join('') : '<p class="drawer-empty">سيتم إضافة باقي التصنيفات قريبًا.</p>';
+    if (filter) {
+      const current = filter.value;
+      filter.innerHTML = '<option value="">كل التصنيفات</option>' + active.map(c => '<option value="'+escapeHtml(c.id)+'">'+escapeHtml(c.name)+'</option>').join('');
+      filter.value = current || state.category || '';
+    }
   }
   function renderProducts() {
     const grid = $('#productGrid'); if (!grid) return;
