@@ -5,6 +5,7 @@
   const norm=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
   const fallbackImage='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="100%" height="100%" fill="#f0efec"/><g fill="none" stroke="#b6b4ae" stroke-width="5"><rect x="235" y="100" width="130" height="245" rx="24"/></g><text x="300" y="400" text-anchor="middle" fill="#686761" font-family="Arial" font-size="22">PHONE BOX</text></svg>');
   const imageFor=p=>p?.image_url||(Array.isArray(p?.images)&&p.images[0])||'';
+  const cleanDescription=v=>String(v||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/^Type:\\s.*?\\s·\\s(?=Tags:)/i,'').replace(/^Tags:\\s.*?\\s·\\s/i,'').trim();
   const categoryDisplayName=name=>{
     const n=norm(name);
     const rules=[
@@ -79,7 +80,7 @@
     $('#emptyState').classList.toggle('hidden',filtered.length!==0);
     grid.innerHTML=filtered.map(p=>{
       const img=imageFor(p)||fallbackImage;
-      return '<article class="product-card" data-open-product="'+escapeHtml(p.id)+'"><div class="product-image-wrap">'+(p.is_featured?'<span class="product-badge">Featured</span>':'')+'<img class="product-image" loading="lazy" src="'+escapeHtml(img)+'" alt="'+escapeHtml(p.name)+'" onerror="this.onerror=null;this.src=\''+fallbackImage+'\'"></div><div class="product-info"><span class="product-category">'+escapeHtml(categoryName(p.category_id))+'</span><h3>'+escapeHtml(p.name)+'</h3>'+(p.brand?'<p class="product-brand">'+escapeHtml(p.brand)+'</p>':'')+(p.description?'<p class="product-description">'+escapeHtml(p.description.replace(/<[^>]*>/g,' '))+'</p>':'')+'<div class="product-card-bottom"><button type="button" class="add-button" data-details="'+escapeHtml(p.id)+'">View Details</button></div></div></article>';
+      return '<article class="product-card" data-open-product="'+escapeHtml(p.id)+'"><div class="product-image-wrap">'+(p.is_featured?'<span class="product-badge">Featured</span>':'')+'<img class="product-image" loading="lazy" src="'+escapeHtml(img)+'" alt="'+escapeHtml(p.name)+'" onerror="this.onerror=null;this.src=\''+fallbackImage+'\'"></div><div class="product-info"><span class="product-category">'+escapeHtml(categoryName(p.category_id))+'</span><h3>'+escapeHtml(p.name)+'</h3>'+(p.brand?'<p class="product-brand">'+escapeHtml(p.brand)+'</p>':'')+(p.description?'<p class="product-description">'+escapeHtml(cleanDescription(p.description))+'</p>':'')+'<div class="product-card-bottom"><button type="button" class="add-button" data-details="'+escapeHtml(p.id)+'">View Details</button></div></div></article>';
     }).join('');
   }
   function openProduct(id){
@@ -88,7 +89,7 @@
     $('#detailImage').src=imageFor(p)||fallbackImage;$('#detailImage').alt=p.name;
     $('#detailCategory').textContent=categoryName(p.category_id);$('#detailName').textContent=p.name;
     $('#detailBrand').textContent=p.brand||'';
-    $('#detailDescription').textContent=(p.description||'Product details are not available yet.').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').trim();
+    $('#detailDescription').textContent=cleanDescription(p.description)||'Product details are not available yet.';
     $('#productDetailOverlay').classList.remove('hidden');document.body.classList.add('no-scroll');
   }
   function closeProduct(){ $('#productDetailOverlay').classList.add('hidden');if(!$('#cartOverlay')||$('#cartOverlay').classList.contains('hidden'))document.body.classList.remove('no-scroll');state.detail=null;}
