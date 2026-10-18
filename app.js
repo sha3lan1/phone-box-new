@@ -1,8 +1,11 @@
 (() => {
   const cfg=window.PHONE_BOX_CONFIG||{}, $=s=>document.querySelector(s);
-  const state={supabase:null,products:[],categories:[],cart:JSON.parse(localStorage.getItem('pb-cart')||'[]'),category:'',query:'',detail:null};
+  function loadCart(){try{const v=JSON.parse(localStorage.getItem('pb-cart')||'[]');return Array.isArray(v)?v.filter(i=>i&&i.id!=null&&Number(i.qty)>0).map(i=>({...i,qty:Math.min(99,Math.floor(Number(i.qty)))})):[];}catch(_){return [];}}
+  const storeCart=()=>{try{localStorage.setItem('pb-cart',JSON.stringify(state.cart));}catch(_){}};
+  const state={supabase:null,products:[],categories:[],cart:loadCart(),category:'',query:'',detail:null};
   const escapeHtml=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const norm=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
+  const norm=v=>String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[\u064B-\u065F\u0670\u0640]/g,'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/ى/g,'ي').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
+  const matchesQuery=(text,q)=>{const t=norm(text),toks=norm(q).split(' ').filter(Boolean);return toks.every(k=>t.includes(k));};
   const fallbackImage='data:image/svg+xml;charset=UTF-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="500"><rect width="100%" height="100%" fill="#f0efec"/><g fill="none" stroke="#b6b4ae" stroke-width="5"><rect x="235" y="100" width="130" height="245" rx="24"/></g><text x="300" y="400" text-anchor="middle" fill="#686761" font-family="Arial" font-size="22">PHONE BOX</text></svg>');
   const imageFor=p=>p?.image_url||(Array.isArray(p?.images)&&p.images[0])||'';
   const cleanDescription=v=>String(v||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/^Type:\s.*?\s·\s(?=Tags:)/i,'').replace(/^Tags:\s.*?\s·\s/i,'').trim();
@@ -35,7 +38,8 @@
     return /[\u0600-\u06FF]/.test(String(name||''))?'Other Accessories':String(name||'Other Accessories');
   };
   const categoryIdForProduct=p=>String(p.category_id||'');
-  const categoryName=id=>{const c=state.categories.find(x=>String(x.id)===String(id));return c?categoryDisplayName(c.name):'Needs Classification';};
+  const isReviewCategory=c=>categoryDisplayName(c.name)==='Needs Review';
+  const categoryName=id=>{const c=state.categories.find(x=>String(x.id)===String(id));if(!c)return '';const d=categoryDisplayName(c.name);return d==='Needs Review'?'':d;};
   const toast=msg=>{const el=$('#toast');if(!el)return;el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200);};
   function categoryGroup(name){const label=categoryDisplayName(name);return label;}
   function findMainCategory(keys){
@@ -43,7 +47,7 @@
   }
   function renderCategories(){
     const grid=$('#categoryGrid'),filter=$('#categoryFilter');
-    const active=state.categories.filter(c=>c.is_active!==false).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+    const active=state.categories.filter(c=>c.is_active!==false&&!isReviewCategory(c)).sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
     const specs=[
       {key:'chargers',label:'Chargers',terms:['chargers','wall chargers','شواحن','شاحن']},
       {key:'screen-protectors',label:'Screen Protectors',terms:['screen protectors','screen protector','tempered glass','حماية الشاشة','لزقات الحماية']},
@@ -52,7 +56,7 @@
     ];
     const used=new Set(),main=[];
     for(const spec of specs){
-      const c=active.find(x=>!used.has(String(x.id))&&spec.terms.some(t=>norm(categoryDisplayName(x.name)).includes(norm(t))||norm(x.name).includes(norm(t))));
+      const c=active.find(x=>!used.has(String(x.id))&&categoryDisplayName(x.name)===spec.label)||active.find(x=>!used.has(String(x.id))&&spec.terms.some(t=>norm(categoryDisplayName(x.name)).includes(norm(t))||norm(x.name).includes(norm(t))));
       if(c){used.add(String(c.id));const p=state.products.find(p=>String(p.category_id)===String(c.id)&&imageFor(p));main.push({...c,_label:spec.label,_product:p||state.products.find(p=>String(p.category_id)===String(c.id))});}
       else main.push({_label:spec.label,_product:state.products.find(p=>spec.terms.some(t=>norm(p.name+' '+(p.description||'')+' '+(p.brand||'')).includes(norm(t)))&&imageFor(p)),_missing:true});
     }
@@ -68,12 +72,12 @@
   }
   function renderProducts(){
     const grid=$('#productGrid');if(!grid)return;
-    const filtered=state.products.filter(p=>p.is_active!==false&&(!state.category||String(p.category_id)===String(state.category))&&(!state.query||norm(p.name+' '+(p.brand||'')+' '+(p.description||'')).includes(norm(state.query))));
+    const filtered=state.products.filter(p=>p.is_active!==false&&(!state.category||String(p.category_id)===String(state.category))&&(!state.query||matchesQuery(p.name+' '+(p.brand||'')+' '+(p.description||''),state.query)));
     $('#resultCount').textContent=filtered.length+' products';
     $('#emptyState').classList.toggle('hidden',filtered.length!==0);
     grid.innerHTML=filtered.map(p=>{
       const img=imageFor(p)||fallbackImage;
-      return '<article class="product-card" data-open-product="'+escapeHtml(p.id)+'"><div class="product-image-wrap">'+(p.is_featured?'<span class="product-badge">Featured</span>':'')+'<img class="product-image" loading="lazy" src="'+escapeHtml(img)+'" alt="'+escapeHtml(p.name)+'" onerror="this.onerror=null;this.src=\''+fallbackImage+'\'"></div><div class="product-info"><span class="product-category">'+escapeHtml(categoryName(p.category_id))+'</span><h3>'+escapeHtml(p.name)+'</h3>'+(p.brand?'<p class="product-brand">'+escapeHtml(p.brand)+'</p>':'')+(p.description?'<p class="product-description">'+escapeHtml(cleanDescription(p.description))+'</p>':'')+'<div class="product-card-bottom"><button type="button" class="add-button" data-details="'+escapeHtml(p.id)+'">View Details</button></div></div></article>';
+      return '<article class="product-card" data-open-product="'+escapeHtml(p.id)+'"><div class="product-image-wrap">'+(p.is_featured?'<span class="product-badge">Featured</span>':'')+'<img class="product-image" loading="lazy" src="'+escapeHtml(img)+'" alt="'+escapeHtml(p.name)+'" onerror="this.onerror=null;this.src=\''+fallbackImage+'\'"></div><div class="product-info">'+(categoryName(p.category_id)?'<span class="product-category">'+escapeHtml(categoryName(p.category_id))+'</span>':'')+'<h3>'+escapeHtml(p.name)+'</h3>'+(p.brand?'<p class="product-brand">'+escapeHtml(p.brand)+'</p>':'')+(p.description?'<p class="product-description">'+escapeHtml(cleanDescription(p.description))+'</p>':'')+'<div class="product-card-bottom"><button type="button" class="add-button" data-details="'+escapeHtml(p.id)+'">View Details</button></div></div></article>';
     }).join('');
   }
   function openProduct(id){
@@ -86,10 +90,10 @@
     $('#productDetailOverlay').classList.remove('hidden');document.body.classList.add('no-scroll');
   }
   function closeProduct(){ $('#productDetailOverlay').classList.add('hidden');if(!$('#cartOverlay')||$('#cartOverlay').classList.contains('hidden'))document.body.classList.remove('no-scroll');state.detail=null;}
-  function saveCart(){localStorage.setItem('pb-cart',JSON.stringify(state.cart));renderCart();}
+  function saveCart(){storeCart();renderCart();}
   function renderCart(){
     $('#cartCount').textContent=state.cart.reduce((n,i)=>n+i.qty,0);
-    $('#cartItems').innerHTML=state.cart.length?state.cart.map(i=>'<div class="cart-item"><img src="'+escapeHtml(i.image||fallbackImage)+'" alt=""><div class="cart-item-main"><strong>'+escapeHtml(i.name)+'</strong><small>'+escapeHtml(i.brand||categoryName(i.category_id))+'</small><div class="quantity-control"><button type="button" data-qty="'+escapeHtml(i.id)+'" data-delta="-1" aria-label="Decrease quantity">−</button><span>'+i.qty+'</span><button type="button" data-qty="'+escapeHtml(i.id)+'" data-delta="1" aria-label="Increase quantity">+</button></div></div><button type="button" class="remove-item" data-remove="'+escapeHtml(i.id)+'" aria-label="Remove item">×</button></div>').join(''):'<div class="empty-cart"><span>🛍</span><p>Your cart is empty.</p><button class="button button-dark" id="shopFromCart" type="button">Browse Products</button></div>';
+    $('#cartItems').innerHTML=state.cart.length?state.cart.map(i=>'<div class="cart-item"><img src="'+escapeHtml(i.image||fallbackImage)+'" alt=""><div class="cart-item-main"><strong>'+escapeHtml(i.name)+'</strong><small>'+escapeHtml(i.brand||categoryName(i.category_id)||'')+'</small><div class="quantity-control"><button type="button" data-qty="'+escapeHtml(i.id)+'" data-delta="-1" aria-label="Decrease quantity">−</button><span>'+i.qty+'</span><button type="button" data-qty="'+escapeHtml(i.id)+'" data-delta="1" aria-label="Increase quantity">+</button></div></div><button type="button" class="remove-item" data-remove="'+escapeHtml(i.id)+'" aria-label="Remove item">×</button></div>').join(''):'<div class="empty-cart"><span>🛍</span><p>Your cart is empty.</p><button class="button button-dark" id="shopFromCart" type="button">Browse Products</button></div>';
     $('#cartTotal').textContent='Prices are confirmed by WhatsApp';
   }
   function addToCart(p){
@@ -97,15 +101,17 @@
     if(item)item.qty++;else state.cart.push({id:p.id,name:p.name,brand:p.brand||'',category_id:p.category_id,image:imageFor(p),description:p.description||'',qty:1});
     saveCart();toast('Added to cart');closeProduct();
   }
+  async function fetchAll(build){const size=1000,out=[];for(let from=0;;from+=size){const r=await build().range(from,from+size-1);if(r.error)return {error:r.error,data:null};out.push(...(r.data||[]));if(!r.data||r.data.length<size)break;}return {data:out,error:null};}
   async function loadData(){
     const grid=$('#productGrid');
     if(!window.supabase||!cfg.supabaseUrl||!cfg.supabaseAnonKey||cfg.supabaseAnonKey.includes('PASTE_YOUR')){
       grid.innerHTML='<div class="loading-state setup-notice"><strong>Store database is not connected.</strong><p>Check the Supabase publishable key in config.js.</p></div>';$('#categoryGrid').innerHTML='<div class="loading-state">Waiting for database connection.</div>';return;
     }
     state.supabase=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey);
-    const [cats,prods]=await Promise.all([state.supabase.from('categories').select('*').eq('is_active',true).order('sort_order'),state.supabase.from('products').select('*').eq('is_active',true).order('sort_order')]);
+    const [cats,prods]=await Promise.all([fetchAll(()=>state.supabase.from('categories').select('*').eq('is_active',true).order('sort_order').order('id')),fetchAll(()=>state.supabase.from('products').select('*').eq('is_active',true).order('sort_order').order('id'))]);
     if(cats.error||prods.error){grid.innerHTML='<div class="loading-state">Could not load products. Please try again later.</div>';toast('Database connection failed');return;}
     state.categories=cats.data||[];state.products=prods.data||[];
+    const before=state.cart.length;state.cart=state.cart.filter(i=>state.products.some(p=>String(p.id)===String(i.id)));if(state.cart.length!==before){storeCart();renderCart();}
     renderCategories();renderProducts();
   }
   const drawer=$('#sideDrawer'),backdrop=$('#drawerBackdrop'),menuToggle=$('#menuToggle');
@@ -136,6 +142,7 @@
     if(e.target.closest('#shopFromCart')){$('#cartOverlay').classList.add('hidden');document.body.classList.remove('no-scroll');scrollToProducts();return;}
     const nav=e.target.closest('.desktop-nav a[href^="#"],.hero-actions a[href^="#"],.mobile-quick-nav a[href^="#"]');if(nav){const target=document.querySelector(nav.getAttribute('href'));if(target){e.preventDefault();target.scrollIntoView({behavior:'smooth',block:'start'});if(drawer?.contains(nav))setDrawer(false);}return;}
   });
+  document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$('#productDetailOverlay').classList.contains('hidden'))closeProduct();else if(!$('#cartOverlay').classList.contains('hidden')){$('#cartOverlay').classList.add('hidden');document.body.classList.remove('no-scroll');}else setDrawer(false);});
   $('#quickSearch')?.addEventListener('click',()=>{scrollToProducts();setTimeout(()=>$('#searchInput')?.focus({preventScroll:true}),250);});
   $('#searchInput')?.addEventListener('input',e=>{state.query=e.target.value;renderProducts();});
   $('#categoryFilter')?.addEventListener('change',e=>{state.category=e.target.value;renderCategories();renderProducts();});
@@ -146,7 +153,7 @@
     if(delivery&&(!phone||!address)){toast('Enter your phone number and delivery location');return;}
     const items=state.cart.map(i=>'• '+i.name+(i.brand?' — '+i.brand:'')+' × '+i.qty).join('\n');
     const msg=delivery?
-      ['السلام عليكم، طلبت المنتجات التالية من موقعكم الإلكتروني PHONE BOX وأرغب بتأكيد الطلب:','',items,'','رقم هاتفي: '+phone,'موقعي للتوصيل: '+address,'يرجى تأكيد توفر المنتجات وتكلفة التوصيل قبل الإرسال.'].join('\n'):
+      ['السلام عليكم، طلبت المنتجات التالية من موقعكم الإلكتروني PHONE BOX وأرغب بتأكيد الطلب:','',items,'',name?'الاسم: '+name:'','رقم هاتفي: '+phone,'موقعي للتوصيل: '+address,'يرجى تأكيد توفر المنتجات وتكلفة التوصيل قبل الإرسال.'].join('\n'):
       ['السلام عليكم، اخترت المنتجات التالية من موقعكم الإلكتروني PHONE BOX:','',items,'','حاب أستلمها من المحل، ممكن تبعتولي لوكيشن المحل لو تكرمتوا؟',name?'الاسم: '+name:''].filter(Boolean).join('\n');
     window.open('https://wa.me/'+(cfg.whatsappNumber||'962799350131')+'?text='+encodeURIComponent(msg),'_blank','noopener');
   });

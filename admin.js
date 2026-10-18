@@ -6,29 +6,50 @@
  const say=(id,msg)=>{const el=$(id);if(el)el.textContent=msg;};
  if(!window.supabase||!cfg.supabaseAnonKey||cfg.supabaseAnonKey.includes('PASTE_YOUR')){$('#configNotice').classList.remove('hidden');}
  else { $('#configNotice').classList.add('hidden'); $('#loginPanel').classList.remove('hidden'); db=window.supabase.createClient(cfg.supabaseUrl,cfg.supabaseAnonKey); init(); }
- async function init(){const {data:{session}}=await db.auth.getSession(); if(session) await showDashboard(); db.auth.onAuthStateChange((_event,session)=>{if(session)showDashboard();else {$('#dashboard').classList.add('hidden');$('#loginPanel').classList.remove('hidden');}});}
- $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();say('#loginMessage','جارٍ تسجيل الدخول…');const {error}=await db.auth.signInWithPassword({email:$('#loginEmail').value.trim(),password:$('#loginPassword').value});say('#loginMessage',error?'تعذّر تسجيل الدخول: '+error.message:'تم تسجيل الدخول.');if(!error)await showDashboard();});
+ let shownFor=null;
+ async function init(){const {data:{session}}=await db.auth.getSession(); if(session) await showDashboard(session); db.auth.onAuthStateChange((_event,session)=>{setTimeout(()=>{if(session)showDashboard(session);else{shownFor=null;$('#dashboard').classList.add('hidden');$('#loginPanel').classList.remove('hidden');}},0);});}
+ $('#loginForm').addEventListener('submit',async e=>{e.preventDefault();say('#loginMessage','جارٍ تسجيل الدخول…');const {error}=await db.auth.signInWithPassword({email:$('#loginEmail').value.trim(),password:$('#loginPassword').value});say('#loginMessage',error?'تعذّر تسجيل الدخول: '+error.message:'تم تسجيل الدخول.');});
  $('#logoutButton').addEventListener('click',async()=>{await db.auth.signOut();});
- async function showDashboard(){ $('#loginPanel').classList.add('hidden');$('#dashboard').classList.remove('hidden'); await loadAll();}
+ async function showDashboard(session){
+   if(!session||shownFor===session.user.id)return; shownFor=session.user.id;
+   // UI-level check only: the real protection must be RLS on the server.
+   const chk=await db.from('store_admins').select('user_id').eq('user_id',session.user.id).maybeSingle();
+   if(!chk.error&&!chk.data){shownFor=null;await db.auth.signOut();say('#loginMessage','هذا الحساب ليس مديرًا للمتجر.');return;}
+   $('#loginPanel').classList.add('hidden');$('#dashboard').classList.remove('hidden');
+   if(chk.error)say('#formMessage','تنبيه: تعذّر التحقق من جدول store_admins ('+chk.error.message+'). راجع صلاحيات RLS.');
+   await loadAll();
+ }
+ async function fetchAll(build){const size=1000,out=[];for(let from=0;;from+=size){const r=await build().range(from,from+size-1);if(r.error)return {error:r.error,data:null};out.push(...(r.data||[]));if(!r.data||r.data.length<size)break;}return {data:out,error:null};}
  async function loadAll(){
-   let [c,p]=await Promise.all([db.from('categories').select('*').order('sort_order'),db.from('products').select('*').order('created_at',{ascending:false})]);
+   let [c,p]=await Promise.all([fetchAll(()=>db.from('categories').select('*').order('sort_order').order('id')),fetchAll(()=>db.from('products').select('*').order('created_at',{ascending:false}).order('id'))]);
    if(c.error||p.error){say('#formMessage','Could not load data. Check Supabase admin permissions.');return;}
    cats=(c.data||[]).filter(x=>x.is_active!==false);products=p.data||[];
    cats.sort((x,y)=>(x.sort_order||0)-(y.sort_order||0));
-   $('#productCategory').innerHTML=cats.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
+   $('#productCategory').innerHTML=cats.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join('');
    $('#adminCategories').innerHTML=cats.map(c=>'<span class="admin-category-chip">'+esc(c.name)+'</span>').join('');
    renderList();
  }
  function renderList(){ $('#adminProductList').innerHTML=products.length?products.map(p=>'<div class="admin-product-row"><div class="admin-product-details"><strong>'+esc(p.name)+'</strong><small>'+'Stock: '+p.stock_quantity+' · '+(p.is_active?'Visible':'Hidden')+'</small></div><button class="clear-button" data-edit="'+p.id+'">تعديل</button><button class="clear-button danger-button" data-delete="'+p.id+'">حذف</button></div>').join(''):'<p>لا توجد منتجات بعد. أضف أول منتج من النموذج أعلاه.</p>'; }
  function resetForm(){editing=null;$('#productForm').reset();$('#productId').value='';$('#productStock').value='0';$('#productActive').checked=true;$('#formTitle').textContent='إضافة منتج جديد';$('#saveProduct').textContent='حفظ المنتج';$('#cancelEdit').classList.add('hidden');say('#formMessage','');}
  $('#cancelEdit').addEventListener('click',resetForm);
+ async function shrinkImage(file){
+   if(!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type)||file.size<350*1024)return file;
+   try{
+     const bmp=await createImageBitmap(file),max=1600,k=Math.min(1,max/Math.max(bmp.width,bmp.height));
+     const c=document.createElement('canvas');c.width=Math.round(bmp.width*k);c.height=Math.round(bmp.height*k);
+     const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(bmp,0,0,c.width,c.height);
+     const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+     return blob&&blob.size<file.size?new File([blob],'photo.jpg',{type:'image/jpeg'}):file;
+   }catch(_){return file;}
+ }
  $('#adminProductList').addEventListener('click',async e=>{const edit=e.target.closest('[data-edit]');if(edit){const p=products.find(x=>String(x.id)===edit.dataset.edit);if(!p)return;editing=p;$('#productId').value=p.id;$('#productName').value=p.name||'';$('#productBrand').value=p.brand||'';$('#productCategory').value=p.category_id||'';$('#productStock').value=p.stock_quantity??0;$('#productDescription').value=p.description||'';$('#productFeatured').checked=!!p.is_featured;$('#productActive').checked=!!p.is_active;$('#formTitle').textContent='تعديل المنتج';$('#saveProduct').textContent='حفظ التعديلات';$('#cancelEdit').classList.remove('hidden');$('#productForm').scrollIntoView({behavior:'smooth'});}
  const del=e.target.closest('[data-delete]');if(del){const p=products.find(x=>String(x.id)===del.dataset.delete);if(!p||!confirm('متأكد إنك بدك تحذف '+p.name+'؟'))return;const {error}=await db.from('products').delete().eq('id',p.id);if(error){say('#formMessage','تعذّر الحذف: '+error.message);return;}if(p.image_path)await db.storage.from('product-images').remove([p.image_path]);await loadAll();say('#formMessage','تم حذف المنتج.');}});
  $('#productForm').addEventListener('submit',async e=>{e.preventDefault();const button=$('#saveProduct');button.disabled=true;say('#formMessage','جارٍ حفظ المنتج…');try{
- let image_url=editing?.image_url||null, image_path=editing?.image_path||null;const file=$('#productImage').files[0];
- if(file){if(!file.type.startsWith('image/'))throw new Error('اختر ملف صورة صالحًا.');if(file.size>8*1024*1024)throw new Error('حجم الصورة أكبر من 8 ميغابايت.');const ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';const path=Date.now()+'-'+Math.random().toString(36).slice(2,9)+'.'+ext;const {error:uploadError}=await db.storage.from('product-images').upload(path,file,{upsert:false,contentType:file.type});if(uploadError)throw uploadError;const {data}=db.storage.from('product-images').getPublicUrl(path);image_url=data.publicUrl;image_path=path;}
- const payload={name:$('#productName').value.trim(),brand:$('#productBrand').value.trim()||null,category_id:$('#productCategory').value?Number($('#productCategory').value):null,price:0,stock_quantity:Number($('#productStock').value),description:$('#productDescription').value.trim()||null,is_featured:$('#productFeatured').checked,is_active:$('#productActive').checked,image_url,image_path,updated_at:new Date().toISOString()};
- const res=editing?await db.from('products').update(payload).eq('id',editing.id):await db.from('products').insert(payload);if(res.error)throw res.error;
+ let image_url=editing?.image_url||null, image_path=editing?.image_path||null;let file=$('#productImage').files[0];if(file)file=await shrinkImage(file);
+ if(file){if(!file.type.startsWith('image/'))throw new Error('اختر ملف صورة صالحًا.');if(file.size>8*1024*1024)throw new Error('حجم الصورة أكبر من 8 ميغابايت.');const ext=({'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/gif':'gif'})[file.type]||((file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg');const path=Date.now()+'-'+Math.random().toString(36).slice(2,9)+'.'+ext;const {error:uploadError}=await db.storage.from('product-images').upload(path,file,{upsert:false,contentType:file.type});if(uploadError)throw uploadError;const {data}=db.storage.from('product-images').getPublicUrl(path);image_url=data.publicUrl;image_path=path;}
+ const catValue=()=>{const v=$('#productCategory').value;return v?(/^\d+$/.test(v)?Number(v):v):null;};
+ const payload={name:$('#productName').value.trim(),brand:$('#productBrand').value.trim()||null,category_id:catValue(),stock_quantity:Number($('#productStock').value),description:$('#productDescription').value.trim()||null,is_featured:$('#productFeatured').checked,is_active:$('#productActive').checked,image_url,image_path,updated_at:new Date().toISOString()};
+ const res=editing?await db.from('products').update(payload).eq('id',editing.id):await db.from('products').insert({...payload,price:0});if(res.error)throw res.error;
  if(file&&editing?.image_path&&editing.image_path!==image_path)await db.storage.from('product-images').remove([editing.image_path]);resetForm();await loadAll();say('#formMessage','تم حفظ المنتج بنجاح.');
  }catch(err){say('#formMessage','لم يتم الحفظ: '+(err.message||'حدث خطأ'));}finally{button.disabled=false;}});
 
@@ -60,19 +81,21 @@
    return null;
  }
  function detectProductGroup(product){
-   const name=textKey(product.title||product.name||''), desc=textKey(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
+   // Uses ONLY type + tags + name. The long description is NOT used: it usually lists compatible devices
+   // ("works with charger / iPhone ...") and caused products to land in the wrong category.
+   const name=textKey(product.title||product.name||'');
    const type=textKey(product.product_type||product.category||''), tags=textKey(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
-   const primary=type+' '+tags+' '+name, full=primary+' '+desc;
+   const primary=type+' '+tags+' '+name;
    const rules=[
     ['screen_protectors',/screen protector|tempered glass|privacy glass|camera lens protector|screen guard|glass protector|لزقه شاشه|لزقات الحمايه|حمايه شاشه|حمايه عدسه/],
-    ['airpods_cases',/airpods case|airpods cover|earbuds case|case for airpods|كفر ايربود|كفر سماعات/],
+    ['airpods_cases',/(airpods?|earbuds?|buds)\b.{0,40}\b(case|cover)\b|\b(case|cover)\b.{0,25}\b(airpods?|earbuds?)\b|كفر ايربود|كفر سماعات/],
     ['car_accessories',/car charger|car mount|car holder|car phone holder|dashboard mount|windshield mount|car fm transmitter|fm transmitter|automobile accessories|هولدر سياره|حامل سياره|شاحن سياره|مرسل اف ام|اكسسوارات السياره/],
     ['power_banks',/power bank|powerbank|portable power|battery pack|باور بانك|بطاريه متنقله/],
-    ['cables',/usb c cable|type c cable|lightning cable|charging cable|data cable|aux cable|audio cable|hdmi cable|ethernet cable|\bcables?\b|\bcaple\b|\bcaples\b|\bcabels?\b|\bwires?\b|كيبل|كابل|وصله شحن|سلك شحن/],
-    ['usb_accessories',/adapter|converter|dongle|usb hub|card reader|otg|flash drive|memory card|\bhub\b|محول|محولات|قارئ ذاكره|فلاش ميموري|ملحقات usb/],
     ['wireless_chargers',/wireless charger|magsafe charger|magnetic wireless charger|charging pad|شاحن لاسلكي|شحن لاسلكي/],
-    ['chargers',/wall charger|gan charger|power adapter|charging station|\bcharger\b|\bcharging\b|رؤوس الشحن|شاحن|شواحن/],
-    ['phone_cases',/phone case|phone cover|mobile case|protective case|silicone case|clear case|shockproof case|\bphone cases?\b|\bcases? for iphone\b|كفر موبايل|كفرات موبايل|جراب موبايل|حافظه موبايل/],
+    ['cables',/usb c cable|type c cable|lightning cable|charging cable|data cable|aux cable|audio cable|hdmi cable|ethernet cable|\bcables?\b|\bcaple\b|\bcaples\b|\bcabels?\b|\bwires?\b|كيبل|كابل|وصله شحن|سلك شحن/],
+    ['chargers',/wall charger|gan charger|power adapter|charging station|\bcharger\b|رؤوس الشحن|راس شحن|رأس شحن|شاحن|شواحن/],
+    ['usb_accessories',/adapter|converter|dongle|usb hub|card reader|otg|\bhub\b|محول|محولات|قارئ ذاكره|ملحقات usb/],
+    ['phone_cases',/phone case|phone cover|mobile case|protective case|silicone case|clear case|shockproof case|\b(iphone|samsung|galaxy|pixel|xiaomi|huawei|oppo|redmi)\b.{0,60}\b(case|cover)\b|\b(case|cover)\b.{0,25}\b(iphone|samsung|galaxy)\b|كفر موبايل|كفرات موبايل|جراب موبايل|حافظه موبايل/],
     ['phone_holders_tripods',/selfie stick|tripod|gimbal|phone holder|phone stand|desktop stand|phone ring holder|عصا سيلفي|ترايبود|ستاند|حامل موبايل|حامل هاتف/],
     ['lighting',/ring light|selfie light|lighting|رينج لايت|اضاءه/],
     ['watch_accessories',/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعه ذكيه|سوار ساعه/],
@@ -83,10 +106,16 @@
     ['earbuds',/airpods|wireless earbuds|true wireless|earbuds|tws|bluetooth earphones|open ear headphones|ايربود|سماعات لاسلكيه/],
     ['audio',/bluetooth speaker|speaker|microphone|audio|sound|مكبر صوت|سبيكر|مايكروفون/]
    ];
-   for(const [group,pattern] of rules){if(pattern.test(primary))return group;}
-   for(const [group,pattern] of rules){if(pattern.test(full))return group;}
-   if(/\p{Script=Arabic}/u.test(String(product.title||product.name||'')))return 'needs_review';
-   return null;
+   // If one product matches several groups, only these "winner beats loser" pairs are resolved automatically.
+   // Any other overlap is NOT guessed: it goes to Needs Review.
+   const wins={airpods_cases:['earbuds','audio','audio_wired','phone_cases'],wireless_chargers:['chargers','usb_accessories'],chargers:['usb_accessories'],car_accessories:['chargers','cables','phone_holders_tripods','usb_accessories'],power_banks:['chargers','cables','wireless_chargers','usb_accessories'],memory_storage:['usb_accessories'],watch_accessories:['chargers','cables','wireless_chargers'],tablet_accessories:['phone_cases','phone_holders_tripods'],audio_wired:['audio'],earbuds:['audio'],screen_protectors:['phone_care'],phone_care:[]};
+   const hit=rules.filter(([g,re])=>re.test(primary)).map(([g])=>g);
+   if(hit.length===1)return hit[0];
+   if(hit.length>1){
+     const winners=hit.filter(g=>hit.every(o=>o===g||(wins[g]||[]).includes(o)));
+     return winners.length===1?winners[0]:'needs_review';
+   }
+   return /\p{Script=Arabic}/u.test(String(product.title||product.name||''))?'needs_review':null;
  }
  function chooseProductCategory(product,categories){
    const group=detectProductGroup(product);if(!group)return null;
@@ -216,10 +245,15 @@
  }
  const fixCatsButton=$('#fixAllCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
-   if(!confirm('Use supplier-style English category names, merge equivalent categories across brands, and classify every product using its name and description. Products that cannot be identified confidently will move to Needs Review, not be guessed. Continue?'))return;
-   fixCatsButton.disabled=true;say('#importMessage','Analyzing products and merging matching categories…');
+   fixCatsButton.disabled=true;
+   {const [c0,p0]=await Promise.all([fetchAll(()=>db.from('categories').select('*').order('id')),fetchAll(()=>db.from('products').select('id,name,category_id').order('id'))]);
+    if(c0.error||p0.error){say('#importMessage','تعذّر قراءة البيانات للمعاينة.');fixCatsButton.disabled=false;return;}
+    const byId=new Map((c0.data||[]).map(c=>[String(c.id),c]));let wouldMove=0,wouldReview=0,keep=0;
+    for(const p of p0.data||[]){const d=detectProductGroup({title:p.name});const cur=byId.get(String(p.category_id||''));const curG=cur?categoryGroup(cur.name):null;
+      if(!d&&curG&&curG!=='needs_review'){keep++;continue;}const g=d||'needs_review';if(g==='needs_review')wouldReview++;if(g!==curG)wouldMove++;}
+    if(!confirm('معاينة (تقريبية، لم يتغير شيء بعد):\n• منتجات سيتم نقلها: '+wouldMove+'\n• منها ستذهب إلى Needs Review: '+wouldReview+'\n• منتجات ستبقى في تصنيفها الحالي: '+keep+'\n\nسيتم أيضًا دمج التصنيفات المتشابهة وإلغاء تفعيل المكرر (بدون حذف أي تصنيف أو منتج).\nيُنصح بتصدير نسخة احتياطية من الجداول من لوحة Supabase قبل المتابعة.\nمتابعة؟')){fixCatsButton.disabled=false;return;}}say('#importMessage','Analyzing products and merging matching categories…');
    try{
-     const [cr,pr]=await Promise.all([db.from('categories').select('*'),db.from('products').select('id,name,brand,description,category_id')]);
+     const [cr,pr]=await Promise.all([fetchAll(()=>db.from('categories').select('*').order('id')),fetchAll(()=>db.from('products').select('id,name,brand,description,category_id').order('id'))]);
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
      let categories=cr.data||[], products=pr.data||[], moved=0,created=0,review=0;
      const ensure=async(group)=>{
@@ -229,9 +263,12 @@
        return id;
      };
      for(const p of products){
-       const detected=detectProductGroup({title:p.name,description:p.description});
+       const detected=detectProductGroup({title:p.name});
+       const curCat=categories.find(c=>String(c.id)===String(p.category_id||''));
+       const curGroup=curCat?categoryGroup(curCat.name):null;
+       if(!detected&&curGroup&&curGroup!=='needs_review')continue; // cannot identify it: leave it where the owner put it
        const group=detected||'needs_review';
-       if(!detected)review++;
+       if(group==='needs_review')review++;
        const id=await ensure(group);
        if(String(id)===String(p.category_id||''))continue;
        const result=await db.from('products').update({category_id:id}).eq('id',p.id);
