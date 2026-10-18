@@ -13,7 +13,7 @@
  async function loadAll(){
    let [c,p]=await Promise.all([db.from('categories').select('*').order('sort_order'),db.from('products').select('*').order('created_at',{ascending:false})]);
    if(c.error||p.error){say('#formMessage','Could not load data. Check Supabase admin permissions.');return;}
-   cats=c.data||[];products=p.data||[];
+   cats=(c.data||[]).filter(x=>x.is_active!==false);products=p.data||[];
    cats.sort((x,y)=>(x.sort_order||0)-(y.sort_order||0));
    $('#productCategory').innerHTML=cats.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join('');
    $('#adminCategories').innerHTML=cats.map(c=>'<span class="admin-category-chip">'+esc(c.name)+'</span>').join('');
@@ -34,7 +34,7 @@
 
  // Product classification by type/name/tags/description, independent of brand.
  const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
- const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_accessories:'Car Accessories',usb_accessories:'USB Adapters & Accessories',audio_wired:'Wired Earphones & Headphones',watch_accessories:'Smart Watches & Accessories',phone_holders_tripods:'Phone Holders & Tripods',memory_storage:'Memory Cards & USB Drives',phone_care:'Cleaning & Phone Care',tablet_accessories:'Tablet Accessories & Stylus Pens',lighting:'Lighting & Ring Lights',other:'Other Accessories',needs_review:'Needs Review',audio:'Audio & Sound'};
+ const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'Wireless Earbuds',airpods_cases:'Earbuds Case',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Charging Cables',car_accessories:'Car Accessories',usb_accessories:'USB-C Hubs / Docking Stations',audio_wired:'Wired Earphones',watch_accessories:'Smart Watches & Accessories',phone_holders_tripods:'Phone Holders & Stands',memory_storage:'Memory Cards & USB Drives',phone_care:'Cleaning & Phone Care',tablet_accessories:'Tablet Accessories & Stylus Pens',lighting:'Lighting & Ring Lights',other:'Other Accessories',needs_review:'Needs Review',audio:'Audio & Sound'};
  function categoryGroup(name){
    const n=textKey(name);
    if(/needs review|غير مصنف|بحاجه لمراجعه/.test(n))return 'needs_review';
@@ -171,7 +171,7 @@
  }
  const fixCatsButton=$('#fixAllCategories');
  if(fixCatsButton) fixCatsButton.addEventListener('click',async()=>{
-   if(!confirm('Normalize all category names to English, merge duplicate categories shared by brands, and classify all products by their names and descriptions? Unknown products will go to Needs Review. Continue?'))return;
+   if(!confirm('Use supplier-style English category names, merge equivalent categories across brands, and classify every product using its name and description. Products that cannot be identified confidently will move to Needs Review, not be guessed. Continue?'))return;
    fixCatsButton.disabled=true;say('#importMessage','Analyzing products and merging matching categories…');
    try{
      const [cr,pr]=await Promise.all([db.from('categories').select('*'),db.from('products').select('id,name,brand,description,category_id')]);
@@ -205,8 +205,9 @@
        categories.push(result.data);created++;return result.data.id;
      };
      for(const p of products){
-       const group=detectProductGroup({title:p.name,description:p.description});
-       if(!group){review++;continue;}
+       const detected=detectProductGroup({title:p.name,description:p.description});
+       const group=detected||'needs_review';
+       if(!detected)review++;
        const id=await ensure(group);
        if(String(id)===String(p.category_id||''))continue;
        const result=await db.from('products').update({category_id:id}).eq('id',p.id);
@@ -256,7 +257,7 @@
        }
      }
      await loadAll();
-     say('#importMessage','Finished. Products reclassified: '+moved+'. New categories: '+created+'. Products needing manual review: '+review+'. Duplicate categories were merged and active category names standardized in English.');
+     say('#importMessage','Finished. Products moved to their best-matched supplier-style category: '+moved+'. New categories: '+created+'. Products needing manual review: '+review+'. Duplicate categories were merged. Only active English categories remain in the admin category list.');
    }catch(err){say('#importMessage','Could not finish safely: '+(err.message||'Unknown error')+'. Please send this exact message before retrying.');}
    finally{fixCatsButton.disabled=false;}
  });
