@@ -7,7 +7,7 @@ self.addEventListener('fetch',e=>{
  const u=new URL(e.request.url);if(u.origin!==location.origin)return;
  const fresh=/\.(html|js|webmanifest)$/.test(u.pathname);
  if(fresh){
-  e.respondWith(fetch(e.request).then(res=>{if(res.ok){const copy=res.clone();caches.open(CACHE_NAME).then(c=>c.put(e.request,copy));}return res;}).catch(()=>caches.match(e.request)));
+  e.respondWith(fetch(e.request).then(res=>{if(res.ok){const copy=res.clone();caches.open(CACHE_NAME).then(c=>c.put(e.request,copy));}return res;}).catch(()=>new Response('Network unavailable. Reopen this page while connected to the internet to load the latest store code.',{status:503,headers:{'Content-Type':'text/plain; charset=utf-8'}})));
  }else{
   e.respondWith(caches.match(e.request).then(cached=>cached||fetch(e.request).then(res=>{if(res.ok){const copy=res.clone();caches.open(CACHE_NAME).then(c=>c.put(e.request,copy));}return res;}).catch(()=>cached)));
  }
