@@ -40,7 +40,7 @@
  }catch(err){say('#formMessage','لم يتم الحفظ: '+(err.message||'حدث خطأ'));}finally{button.disabled=false;}});
 
  // Product classification by type/name/tags/description, independent of brand.
- const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\\u0600-\\u06FF]+/g,' ').trim();
+ const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[إأآ]/g,'ا').replace(/ة/g,'ه').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
  const categoryLabels={phone_cases:'Phone Cases',screen_protectors:'Screen Protectors',power_banks:'Power Banks',earbuds:'AirPods & Earbuds',airpods_cases:'AirPods Cases',chargers:'Chargers',wireless_chargers:'Wireless Chargers',cables:'Cables',car_mounts:'Car Mounts',car_chargers:'Car Chargers',adapters:'Adapters & Hubs',headphones:'Headphones',watch_accessories:'Watch Accessories',stands:'Phone Stands',memory_storage:'Memory Cards & USB Drives',cleaning:'Cleaning Kits',selfie_tripods:'Selfie Sticks & Tripods',tablet_accessories:'Tablet Accessories',ring_lights:'Ring Lights',styluses:'Styluses',audio_adapters:'Audio Adapters',wired_earphones:'Wired Earphones',other:'Other Accessories',needs_review:'Needs Review'};
  function categoryGroup(name){
    const n=textKey(name);
@@ -79,12 +79,12 @@
     ['car_chargers',/car charger|car charging adapter|شاحن سياره|شواحن السيارات/],
     ['car_mounts',/car mount|car holder|dashboard mount|windshield mount|phone holder for car|magnetic car mount|هولدر سياره|حامل سياره/],
     ['power_banks',/power bank|powerbank|portable power|battery pack|باور بانك|بطاريه متنقله/],
-    ['cables',/usb c cable|type c cable|lightning cable|charging cable|data cable|aux cable|audio cable|hdmi cable|ethernet cable|\\bcables?\\b|\\bcaple\\b|\\bcaples\\b|\\bcabels?\\b|\\bwires?\\b|كيبل|كابل|وصله شحن|سلك شحن/],
-    ['adapters',/adapter|converter|dongle|usb hub|card reader|otg|flash drive|memory card|\\bhub\\b|محول|محولات|قارئ ذاكره|فلاش ميموري/],
+    ['cables',/usb c cable|type c cable|lightning cable|charging cable|data cable|aux cable|audio cable|hdmi cable|ethernet cable|\bcables?\b|\bcaple\b|\bcaples\b|\bcabels?\b|\bwires?\b|كيبل|كابل|وصله شحن|سلك شحن/],
+    ['adapters',/adapter|converter|dongle|usb hub|card reader|otg|flash drive|memory card|\bhub\b|محول|محولات|قارئ ذاكره|فلاش ميموري/],
     ['wireless_chargers',/wireless charger|magsafe charger|magnetic wireless charger|charging pad|شاحن لاسلكي|شحن لاسلكي/],
-    ['chargers',/wall charger|gan charger|power adapter|charging station|\\bcharger\\b|\\bcharging\\b|شاحن|شواحن/],
+    ['chargers',/wall charger|gan charger|power adapter|charging station|\bcharger\b|\bcharging\b|شاحن|شواحن/],
     ['airpods_cases',/airpods case|airpods cover|earbuds case|case for airpods|كفر ايربود|كفر سماعات/],
-    ['phone_cases',/phone case|phone cover|mobile case|protective case|silicone case|clear case|shockproof case|\\bphone cases?\\b|\\bcases? for iphone\\b|كفر موبايل|كفرات موبايل|جراب موبايل|حافظه موبايل/],
+    ['phone_cases',/phone case|phone cover|mobile case|protective case|silicone case|clear case|shockproof case|\bphone cases?\b|\bcases? for iphone\b|كفر موبايل|كفرات موبايل|جراب موبايل|حافظه موبايل/],
     ['selfie_tripods',/selfie stick|tripod|gimbal|عصا سيلفي|ترايبود/],
     ['ring_lights',/ring light|selfie light|رينج لايت/],
     ['watch_accessories',/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعه ذكيه|سوار ساعه/],
@@ -92,7 +92,7 @@
     ['tablet_accessories',/tablet case|ipad case|tablet stand|ipad accessories|اكسسوارات التابلت|اكسسوارات الايباد/],
     ['memory_storage',/memory card|micro sd|sd card|flash drive|usb drive|pen drive|ذاكره|فلاش ميموري/],
     ['cleaning',/cleaning kit|screen cleaner|cleaning pen|cleaning brush|cleaner kit|طقم تنظيف|ادوات تنظيف/],
-    ['stands',/desktop stand|desk stand|phone stand|tablet stand|phone holder|desktop holder|\\bstand\\b|\\bstands\\b|ستاند|حامل موبايل|حامل هاتف/],
+    ['stands',/desktop stand|desk stand|phone stand|tablet stand|phone holder|desktop holder|\bstand\b|\bstands\b|ستاند|حامل موبايل|حامل هاتف/],
     ['headphones',/over ear headphones|headphones|headset|gaming headset|هيدفون|سماعات الراس/],
     ['wired_earphones',/wired earphones|wired earbud|3 5mm earphone|earphones with wire|سماعات سلكيه/],
     ['earbuds',/airpods|wireless earbuds|true wireless|earbuds|tws|bluetooth earphones|ايربود|سماعات لاسلكيه/],
@@ -133,7 +133,7 @@
      for(const p of products){
        const name=String(p.title||'').trim();if(!name||old.has(textKey(name)))continue;
        const image=(p.images||[]).map(i=>typeof i==='string'?i:i.src).find(Boolean)||p.image?.src||null;
-       const body=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\\s+/g,' ').trim(); const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||''); const description=[p.product_type?'Type: '+p.product_type:'',tags?'Tags: '+tags:'',body].filter(Boolean).join(' · ').slice(0,600);
+       const body=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim(); const tags=Array.isArray(p.tags)?p.tags.join(', '):String(p.tags||''); const description=body.slice(0,600);
        rows.push({name,brand,category_id:chooseProductCategory({...p,title:name,body_html:description},catRes.data||[]),price:0,stock_quantity:0,description,image_url:image,is_featured:false,is_active:true});
      }
      if(!rows.length){say('#importMessage','لا توجد منتجات جديدة من '+brand+'.');return;}
