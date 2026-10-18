@@ -90,4 +90,56 @@
    } finally {joyroomButton.disabled=false;}
  });
 
+
+ const fixCatsButton=document.createElement('button');
+ fixCatsButton.type='button'; fixCatsButton.id='fixJoyroomCategories'; fixCatsButton.className='button button-dark';
+ fixCatsButton.textContent='إصلاح تصنيفات منتجات JOYROOM';
+ const importButton=$('#importJoyroom');
+ if(importButton && !$('#fixJoyroomCategories')) importButton.parentElement.appendChild(fixCatsButton);
+ fixCatsButton.addEventListener('click',async()=>{
+   if(!confirm('سيتم إعادة تصنيف منتجات JOYROOM الموجودة فقط حسب اسم المنتج ووصفه. المنتجات غير الواضحة ستُنقل إلى إكسسوارات متنوعة إن وُجد هذا التصنيف. متابعة؟'))return;
+   fixCatsButton.disabled=true;say('#importMessage','جارٍ فحص أسماء المنتجات والتصنيفات…');
+   try{
+     const [cr,pr]=await Promise.all([
+       db.from('categories').select('*').eq('is_active',true),
+       db.from('products').select('id,name,brand,description,category_id').ilike('brand','joyroom')
+     ]);
+     if(cr.error)throw cr.error;if(pr.error)throw pr.error;
+     const categories=cr.data||[], items=pr.data||[];
+     const norm=s=>String(s||'').toLowerCase().replace(/[’']/g,'').replace(/[^a-z0-9\u0600-\u06FF]+/g,' ').trim();
+     const categoryByTerms=terms=>categories.find(c=>terms.some(t=>norm(c.name).includes(norm(t))));
+     const categoryFor=item=>{
+       const s=norm((item.name||'')+' '+(item.description||''));
+       const rules=[
+         {signal:/\\b(car mount|phone holder|desk stand|stand holder|mount|phone stand|tablet stand|tripod|selfie stick)\\b|حامل|ستاند|ترايبود|عصا سيلفي/,terms:['حوامل','حامل','ستاند','حوامل السيارات']},
+         {signal:/\\b(usb c cable|type c cable|lightning cable|data cable|charging cable|aux cable|audio cable|cable|wire)\\b|\\b(usb c to|type c to|lightning to|aux to)\\b|كيبل|كابل|وصلة|وصله|سلك/,terms:['كوابل','كابلات','كيبلات','كيبل','كابل','وصلات','وصلة']},
+         {signal:/\\b(otg|usb hub|hub adapter|usb adapter|card reader|memory card|flash drive|usb drive)\\b|\\b(adapter|converter|dongle)\\b|محول|محولات|قارئ ذاكرة|فلاش/,terms:['محولات','محول','وصلات','أدابتور','ذاكرة','فلاش','USB']},
+         {signal:/\\b(power bank|powerbank|portable charger|battery pack)\\b|باور بانك|باوربانك|بطارية متنقلة/,terms:['باور بانك','باوربانك','بطاريات','شواحن متنقلة']},
+         {signal:/\\b(wall charger|car charger|wireless charger|charging station|charger|charging adapter|power adapter)\\b|شاحن|شواحن|قاعدة شحن/,terms:['شواحن','شاحن','محولات الطاقة']},
+         {signal:/\\b(earbuds?|earphones?|headphones?|headsets?|speaker|bluetooth audio|wireless audio|microphone)\\b|سماعة|سماعات|هيدفون|هيدسيت|مكبر صوت/,terms:['سماعات','سماعة','سماعات رأس','صوتيات']},
+         {signal:/\\b(watch strap|watch band|watch case|smart watch|smartwatch|watch charger)\\b|سوار ساعة|حزام ساعة|ساعة ذكية/,terms:['ساعات','سوار ساعة','إكسسوارات الساعات']},
+         {signal:/\\b(screen protector|tempered glass|privacy glass|camera protector)\\b|لزقة شاشة|حماية شاشة|حامي شاشة/,terms:['حماية الشاشة','لزقات','لزقة','حماية']},
+         {signal:/\\b(phone case|mobile case|protective case|silicone case|clear case|airpods case|case cover|phone cover|cover)\\b|كفر|كفرات|جراب|حافظة/,terms:['كفرات','كفر','أغطية','حافظات']}
+       ];
+       for(const rule of rules){
+         if(!rule.signal.test(s))continue;
+         const c=categoryByTerms(rule.terms);if(c)return c.id;
+       }
+       const misc=categoryByTerms(['إكسسوارات متنوعة','متنوع','أخرى','other accessories','miscellaneous']);
+       return misc?.id||null;
+     };
+     let updated=0,unclassified=0;
+     for(const item of items){
+       const category_id=categoryFor(item);
+       if(!category_id){unclassified++;continue;}
+       if(String(category_id)===String(item.category_id))continue;
+       const {error}=await db.from('products').update({category_id}).eq('id',item.id);
+       if(error)throw error;updated++;
+     }
+     await loadAll();
+     say('#importMessage','انتهى فحص '+items.length+' منتجًا. تم تصحيح تصنيف '+updated+' منتج. '+(unclassified?'لم يتضح تصنيف '+unclassified+' منتجات فتركت دون نقل تلقائي.':''));
+   }catch(error){say('#importMessage','تعذّر إصلاح التصنيفات: '+(error?.message||'خطأ غير معروف'));}
+   finally{fixCatsButton.disabled=false;}
+ });
+
 })();
