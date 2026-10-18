@@ -178,29 +178,60 @@
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
      let categories=cr.data||[], products=pr.data||[], moved=0,created=0,review=0;
      const ensure=async(group)=>{
-       let matching=categories.filter(c=>categoryGroup(c.name)===group);
-       if(matching.length)return matching[0].id;
        const label=categoryLabels[group]||'Needs Review';
-       const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
-       const slug=label.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-       // Reuse a category that already owns this unique slug instead of trying to insert a duplicate.
-       const slugMatch=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
-       if(slugMatch.error)throw new Error('Could not check existing category '+label+': '+slugMatch.error.message);
-       if(slugMatch.data){
-         let existing=slugMatch.data;
-         if(existing.name!==label||existing.is_active===false){
-           const updated=await db.from('categories').update({name:label,is_active:true}).eq('id',existing.id).select('*').single();
-           if(updated.error)throw new Error('Could not reuse existing category '+label+': '+updated.error.message);
-           existing=updated.data;
+       // First reuse a semantically matching category already loaded.
+       let matching=categories.find(c=>categoryGroup(c.name)===group);
+       if(matching){
+         if(matching.is_active===false){
+           const active=await db.from('categories').update({is_active:true}).eq('id',matching.id).select('*').single();
+           if(active.error)throw new Error('Could not activate existing category '+label+'.');
+           matching=active.data;
          }
-         categories.push(existing);return existing.id;
+         return matching.id;
        }
+       const slug=label.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+       // Unique name and slug constraints are independent. Check BOTH before inserting.
+       const byName=await db.from('categories').select('*').eq('name',label).maybeSingle();
+       if(byName.error)throw new Error('Could not check existing category '+label+'.');
+       if(byName.data){
+         let existing=byName.data;
+         if(existing.is_active===false){
+           const active=await db.from('categories').update({is_active:true}).eq('id',existing.id).select('*').single();
+           if(active.error)throw new Error('Could not activate existing category '+label+'.');
+           existing=active.data;
+         }
+         if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
+         return existing.id;
+       }
+       const bySlug=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
+       if(bySlug.error)throw new Error('Could not check category slug for '+label+'.');
+       if(bySlug.data){
+         let existing=bySlug.data;
+         // Reuse the slug owner. Do not rename it here: renames are handled by the
+         // duplicate-merging pass, which checks unique names before changing anything.
+         if(existing.is_active===false){
+           const active=await db.from('categories').update({is_active:true}).eq('id',existing.id).select('*').single();
+           if(active.error)throw new Error('Could not activate the existing category record.');
+           existing=active.data;
+         }
+         if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
+         return existing.id;
+       }
+       const maxOrder=categories.reduce((m,c)=>Math.max(m,Number(c.sort_order)||0),0);
        const result=await db.from('categories').insert({name:label,slug,is_active:true,sort_order:maxOrder+10}).select('*').single();
        if(result.error){
-         // A concurrent/previous record may have appeared between the lookup and insert; re-read by slug/name.
-         const retry=await db.from('categories').select('*').eq('slug',slug).maybeSingle();
-         if(retry.error||!retry.data)throw new Error('Could not create category '+label+': '+result.error.message);
-         categories.push(retry.data);return retry.data.id;
+         // Resolve uniqueness races and old records by name OR slug; never ask the
+         // user to identify individual products or create a duplicate category.
+         const [retryName,retrySlug]=await Promise.all([
+           db.from('categories').select('*').eq('name',label).maybeSingle(),
+           db.from('categories').select('*').eq('slug',slug).maybeSingle()
+         ]);
+         const existing=retryName.data||retrySlug.data;
+         if(existing){
+           if(!categories.some(c=>String(c.id)===String(existing.id)))categories.push(existing);
+           return existing.id;
+         }
+         throw new Error('A category could not be created or matched automatically. No duplicate category was added.');
        }
        categories.push(result.data);created++;return result.data.id;
      };
@@ -273,7 +304,7 @@
      }
      await loadAll();
      say('#importMessage','Finished. Products moved to their best-matched supplier-style category: '+moved+'. New categories: '+created+'. Products needing manual review: '+review+'. Duplicate categories were merged. Only active English categories remain in the admin category list.');
-   }catch(err){say('#importMessage','Could not finish safely: '+(err.message||'Unknown error')+'. Please send this exact message before retrying.');}
+   }catch(err){const detail=String(err&&err.message||'');const friendly=/duplicate key|unique constraint|categories_name_key|categories_slug_key/i.test(detail)?'An existing category conflicted with a new one. The classifier now reuses existing names and slugs; refresh the panel and run the bulk classification again. No need to send products individually.':detail;say('#importMessage','Classification stopped safely: '+(friendly||'Please refresh and try again.') );}
    finally{fixCatsButton.disabled=false;}
  });
 
