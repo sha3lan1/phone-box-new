@@ -159,11 +159,11 @@
    if(!confirm('Reclassify ALL products from every brand using product names and descriptions? Products with no clear match will be removed from the incorrect category instead of being placed in Phone Cases. Continue?'))return;
    fixCatsButton.disabled=true;say('#importMessage','Reviewing product descriptions and categories…');
    try{
-     const [cr,pr]=await Promise.all([db.from('categories').select('*').eq('is_active',true),db.from('products').select('id,name,brand,description,category_id,product_type,tags')]);
+     const [cr,pr]=await Promise.all([db.from('categories').select('*').eq('is_active',true),db.from('products').select('id,name,brand,description,category_id')]);
      if(cr.error)throw cr.error;if(pr.error)throw pr.error;
      let moved=0,cleared=0,unchanged=0;
      for(const p of pr.data||[]){
-       const category_id=chooseProductCategory({title:p.name,description:p.description,product_type:p.product_type,tags:p.tags},cr.data||[]);
+       const category_id=chooseProductCategory({title:p.name,description:p.description},cr.data||[]);
        const next=category_id||null;
        if(String(next||'')===String(p.category_id||'')){unchanged++;continue;}
        const result=await db.from('products').update({category_id:next}).eq('id',p.id);
