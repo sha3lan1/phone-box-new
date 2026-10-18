@@ -27,31 +27,40 @@
  // Bulk import for official brand product feeds; no arbitrary default category.
  const textKey = value => String(value||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9\\u0600-\\u06FF]+/g,' ').trim();
  function chooseProductCategory(product, categories) {
-   const title=textKey(product.title||product.name||'');
-   const desc=textKey(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
-   const type=textKey(product.product_type||product.category||'');
-   const tags=textKey(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
-   const source=type+' '+tags+' '+title+' '+desc;
+   const key = value => textKey(value);
+   const title=key(product.title||product.name||'');
+   const type=key(product.product_type||product.category||'');
+   const tags=key(Array.isArray(product.tags)?product.tags.join(' '):(product.tags||''));
+   const description=key(String(product.body_html||product.description||'').replace(/<[^>]*>/g,' '));
+   const strong=type+' '+tags+' '+title;
+   const active=categories.filter(c=>c.is_active!==false);
+   const find=aliases=>active.find(c=>aliases.some(alias=>key(c.name)===key(alias)));
    const rules=[
-    [/car mount|car holder|dashboard mount|phone holder for car|حامل سيارة/,['حوامل السيارات','هولدر سيارة','حامل سيارة']],
+    [/car mount|car holder|dashboard mount|phone holder for car|حامل سيارة/,['حوامل السيارات','هولدر سيارة','حامل سيارة','حوامل']],
+    [/car charger|car charging|car adapter|شاحن سيارة/,['شواحن السيارات','شاحن سيارة','شواحن']],
     [/power bank|powerbank|portable power|battery pack|باور بانك|بطارية متنقلة/,['باور بانك','باوربانك','بطاريات متنقلة']],
     [/screen protector|tempered glass|privacy glass|camera lens protector|لزقة شاشة|حماية شاشة/,['لزقات الحماية','حماية الشاشة','لزقات','حماية']],
     [/usb c cable|type c cable|lightning cable|data cable|charging cable|aux cable|audio cable|hdmi cable|\\bcables?\\b|\\bwires?\\b|كيبل|كابل|وصلة شحن|سلك شحن/,['الكوابل','كابلات','كوابل','الأسلاك']],
     [/adapter|converter|dongle|otg|usb hub|card reader|memory card|flash drive|usb drive|محول|قارئ ذاكرة|فلاش ميموري/,['محولات','وصلات ومحولات','أدابتور','ذاكرة وفلاش']],
     [/wall charger|gan charger|wireless charger|charging station|power adapter|\\bcharger\\b|\\bcharging\\b|شاحن|شواحن|قاعدة شحن/,['الشواحن','شواحن','شاحن']],
-    [/earbuds|earphones|headphones|headsets|speaker|microphone|\\baudio\\b|\\btws\\b|سماعة|سماعات|هيدفون|مكبر صوت/,['السماعات','سماعات','سماعات الرأس','صوتيات']],
-    [/airpods case|earbuds case|phone case|mobile case|protective case|silicone case|clear case|\\bcases?\\b|phone cover|كفر|كفرات|جراب|حافظة موبايل/,['الكفرات','كفرات الموبايل','حافظات الموبايل','كفرات ايربودز']],
-    [/airpods|wireless earbuds|true wireless|ايربودز|ايربود/,['AirPods','سماعات','السماعات']],
+    [/airpods case|earbuds case|airpods cover|\\bcase\\b|\\bcases\\b|phone cover|phone case|mobile case|protective case|silicone case|clear case|كفر|كفرات|جراب|حافظة موبايل/,['كفرات ايربودز','الكفرات','كفرات الموبايل','حافظات الموبايل','كفرات']],
+    [/earbuds|earphones|headphones|headsets|speaker|microphone|\\baudio\\b|\\btws\\b|سماعة|سماعات|هيدفون|مكبر صوت|airpods|wireless earbuds|true wireless|ايربودز|ايربود/,['AirPods','السماعات','سماعات','سماعات الرأس','صوتيات']],
     [/desktop stand|desk stand|tablet stand|phone stand|selfie stick|tripod|gimbal|\\bholder\\b|\\bmount\\b|ستاند|ترايبود|عصا سيلفي/,['حوامل الموبايل','حوامل','ستاندات']],
     [/smart watch|smartwatch|watch band|watch strap|watch charger|apple watch|ساعة ذكية|سوار ساعة/,['الساعات','إكسسوارات الساعات']]
    ];
-   const active=categories.filter(c=>c.is_active!==false);
+   // Match type/tags/title first; never guess another category if a matched type lacks a matching category.
    for(const [pattern,aliases] of rules){
-     if(!pattern.test(source)) continue;
-     const found=active.find(c=>aliases.some(alias=>textKey(c.name)===textKey(alias)));
-     if(found) return found.id;
+     if(!pattern.test(strong)) continue;
+     const category=find(aliases);
+     return category ? category.id : null;
    }
-   const misc=active.find(c=>['اكسسوارات متنوعة','متنوع','اخرى','other accessories'].includes(textKey(c.name)));
+   // Description is only a secondary signal when the product title/type/tags are not informative.
+   for(const [pattern,aliases] of rules){
+     if(!pattern.test(description)) continue;
+     const category=find(aliases);
+     return category ? category.id : null;
+   }
+   const misc=find(['إكسسوارات متنوعة','متنوع','أخرى','other accessories']);
    return misc?misc.id:null;
  }
  async function importBrand(brand, urls, button) {
