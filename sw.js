@@ -1,4 +1,4 @@
-const CACHE_NAME='phone-box-v23';
+const CACHE_NAME='phone-box-v24';
 const CORE=['./','./index.html','./styles.css','./config.js','./app.js','./admin.html','./admin.js','./manifest.webmanifest'];
 self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(CACHE_NAME).then(c=>c.addAll(CORE)));});
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE_NAME).map(k=>caches.delete(k)))).then(()=>self.clients.claim())));
