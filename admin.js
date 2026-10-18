@@ -23,4 +23,71 @@
  const res=editing?await db.from('products').update(payload).eq('id',editing.id):await db.from('products').insert(payload);if(res.error)throw res.error;
  if(file&&editing?.image_path&&editing.image_path!==image_path)await db.storage.from('product-images').remove([editing.image_path]);resetForm();await loadAll();say('#formMessage','تم حفظ المنتج بنجاح.');
  }catch(err){say('#formMessage','لم يتم الحفظ: '+(err.message||'حدث خطأ'));}finally{button.disabled=false;}});
+
+ // Bulk importer: reads the public Shopify product feed and inserts products without displaying prices.
+ const joyroomButton=$('#importJoyroom');
+ if(joyroomButton) joyroomButton.addEventListener('click', async()=>{
+   if(!confirm('سيتم استيراد المنتجات المتاحة من كتالوج JOYROOM الرسمي مع الصور. سيتم تخزين السعر كصفر ولن يظهر للزبائن. متابعة؟')) return;
+   joyroomButton.disabled=true; say('#importMessage','جارٍ جلب كتالوج JOYROOM…');
+   try {
+     let source=null, failure=null;
+     const urls=['https://www.joyroom.com/products.json?limit=250','https://www.joyroom.com/collections/all/products.json?limit=250'];
+     for(const url of urls){
+       try{
+         const response=await fetch(url,{headers:{Accept:'application/json'}});
+         if(!response.ok) throw new Error('HTTP '+response.status);
+         const json=await response.json();
+         if(Array.isArray(json.products)){source=json.products;break;}
+         throw new Error('الرد ليس قائمة منتجات');
+       }catch(error){failure=error;}
+     }
+     if(!source) throw new Error('الموقع منع الجلب المباشر من المتصفح. '+(failure?.message||''));
+     if(!source.length) throw new Error('لم يرجع الكتالوج أي منتجات.');
+     say('#importMessage','وجدنا '+source.length+' منتجًا. جارٍ تجهيز القائمة…');
+     const [oldRes,catRes]=await Promise.all([
+       db.from('products').select('name,brand'),
+       db.from('categories').select('*').eq('is_active',true).order('sort_order')
+     ]);
+     if(oldRes.error) throw oldRes.error;
+     if(catRes.error) throw catRes.error;
+     const existing=new Set((oldRes.data||[]).filter(p=>(p.brand||'').toLowerCase()==='joyroom').map(p=>(p.name||'').trim().toLowerCase()));
+     const cats=catRes.data||[];
+     const getCategory=(p)=>{
+       const s=[p.title,p.product_type,Array.isArray(p.tags)?p.tags.join(' '):p.tags].join(' ').toLowerCase();
+       const checks=[
+         [/power bank|battery|batteries/i,['باور','بطارية','طاقة']],
+         [/charger|charging station|adapter/i,['شاحن','شواحن','طاقة','محول']],
+         [/cable|data cable/i,['كابل','كيبل','سلك']],
+         [/earbud|headphone|earphone|speaker|audio/i,['سماعة','سماعات','صوت']],
+         [/holder|mount|stand/i,['حامل','ستاند','حوامل']],
+         [/watch|wearable/i,['ساعة','ساعات','ذكية']],
+         [/car|fm transmitter|aux/i,['سيارة','سيارات','سيار']]
+       ];
+       for(const [re,terms] of checks){if(re.test(s)){const found=cats.find(c=>terms.some(t=>(c.name||'').toLowerCase().includes(t)));if(found)return found.id;}}
+       return cats[0]?.id||null;
+     };
+     const rows=[];
+     for(const p of source){
+       const name=String(p.title||'').trim();
+       if(!name||existing.has(name.toLowerCase())) continue;
+       const image=(p.images||[]).map(im=>typeof im==='string'?im:im.src).find(Boolean)||p.image?.src||null;
+       const description=String(p.body_html||'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim().slice(0,600);
+       rows.push({name,brand:'JOYROOM',category_id:getCategory(p),price:0,stock_quantity:999,description,image_url:image,is_featured:false,is_active:true});
+     }
+     if(!rows.length){say('#importMessage','ما في منتجات جديدة؛ المنتجات الموجودة من JOYROOM تم استيرادها مسبقًا.');return;}
+     let inserted=0;
+     for(let i=0;i<rows.length;i+=20){
+       const part=rows.slice(i,i+20);
+       const result=await db.from('products').insert(part).select('id');
+       if(result.error) throw new Error('تمت إضافة '+inserted+' منتج قبل الخطأ: '+result.error.message);
+       inserted+=(result.data||[]).length;
+       say('#importMessage','تمت إضافة '+inserted+' من '+rows.length+' منتج…');
+     }
+     await loadAll();
+     say('#importMessage','تم الاستيراد بنجاح: '+inserted+' منتج جديد. تم حفظ الصور المتاحة، والأسعار غير معروضة.');
+   } catch(error) {
+     say('#importMessage','لم يكتمل الاستيراد: '+(error?.message||'خطأ غير معروف')+'. أرسل لي نص هذه الرسالة لأجهز طريقة بديلة.');
+   } finally {joyroomButton.disabled=false;}
+ });
+
 })();
